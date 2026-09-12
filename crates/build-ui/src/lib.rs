@@ -36,6 +36,11 @@ pub struct UiBuild {
     /// Bake the crate version into the bundle as the `__APP_VERSION__`
     /// define.
     pub define_app_version: bool,
+    /// Code-split the bundle: dynamic imports become lazily loaded chunks
+    /// under `chunks/` next to the entry, which keeps its unversioned
+    /// `app.js` name. The workshop UI splits (its panel registry lazy-loads
+    /// feature directories); the config UI does not.
+    pub splitting: bool,
 }
 
 /// Runs the UI build: declares the watched inputs, bundles
@@ -67,7 +72,7 @@ pub fn build(config: UiBuild) -> anyhow::Result<()> {
         std::fs::remove_dir_all(&dist_dir)
             .map_err(|error| anyhow::anyhow!("clear {}: {error}", dist_dir.display()))?;
     }
-    bundle(&ui_dir, &dist_dir, config.define_app_version)?;
+    bundle(&ui_dir, &dist_dir, &config)?;
     copy_static(&ui_dir, &dist_dir, config.static_files)?;
     Ok(())
 }
@@ -103,7 +108,7 @@ fn watch(ui_dir: &Path, config: &UiBuild) {
 /// Runs the esbuild bundle step from the local `ui/node_modules` install.
 /// There is no `npx` fallback: `npx` can download a different esbuild
 /// version and produce different output.
-fn bundle(ui_dir: &Path, dist_dir: &Path, define_app_version: bool) -> anyhow::Result<()> {
+fn bundle(ui_dir: &Path, dist_dir: &Path, config: &UiBuild) -> anyhow::Result<()> {
     let mut command = esbuild_command(ui_dir)?;
     command.current_dir(ui_dir).args([
         "src/main.ts",
@@ -111,11 +116,21 @@ fn bundle(ui_dir: &Path, dist_dir: &Path, define_app_version: bool) -> anyhow::R
         "--format=esm",
         "--target=es2022",
     ]);
-    command.arg(format!("--outfile={}", dist_dir.join("app.js").display()));
+    if config.splitting {
+        // The entry keeps its unversioned name (index.html and the asset
+        // routes reference app.js); chunks are content-hashed under
+        // chunks/, served by the workshop server's chunk route.
+        command.arg("--splitting");
+        command.arg(format!("--outdir={}", dist_dir.display()));
+        command.arg("--entry-names=app");
+        command.arg("--chunk-names=chunks/[name]-[hash]");
+    } else {
+        command.arg(format!("--outfile={}", dist_dir.join("app.js").display()));
+    }
     if std::env::var("PROFILE").as_deref() == Ok("release") {
         command.arg("--minify");
     }
-    if define_app_version {
+    if config.define_app_version {
         let version = std::env::var("CARGO_PKG_VERSION").map_err(|error| {
             anyhow::anyhow!("CARGO_PKG_VERSION is not set: {error}; run through cargo")
         })?;
