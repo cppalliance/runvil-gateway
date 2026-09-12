@@ -6,7 +6,9 @@
 //! [`build`]: the bundle and copies of the static files land in
 //! `$OUT_DIR/ui-dist/`, which git never tracks, so no build step can dirty
 //! the repository. Cargo's own change detection decides when the bundle is
-//! rebuilt; there is no manifest file and no hash. Building requires
+//! rebuilt. Splitting builds content-hash every bundle file and emit a
+//! `manifest.json` plus a stamped `index.html`; non-splitting builds keep
+//! the unversioned `app.js`. Building requires
 //! Node.js 22 and one `npm ci` per `ui/` folder; there is no fallback.
 
 use std::path::{Path, PathBuf};
@@ -37,16 +39,22 @@ pub struct UiBuild {
     /// define.
     pub define_app_version: bool,
     /// Code-split the bundle: dynamic imports become lazily loaded chunks
-    /// under `chunks/` next to the entry, which keeps its unversioned
-    /// `app.js` name. The workshop UI splits (its panel registry lazy-loads
-    /// feature directories); the config UI does not.
+    /// under `chunks/`, and every bundle file is content-hashed - the
+    /// entry lands at `bundle/app-<hash>.js` (plus its extracted
+    /// `bundle/app-<hash>.css`), the chunks at `chunks/<name>-<hash>`.
+    /// The build then writes `manifest.json` (the logical-to-hashed name
+    /// map the workshop server's asset routes resolve through) and stamps
+    /// the dist copy of `index.html` with the hashed URLs. The workshop
+    /// UI splits (its panel registry lazy-loads feature directories); the
+    /// config UI does not, and keeps its unversioned `app.js`.
     pub splitting: bool,
 }
 
 /// Runs the UI build: declares the watched inputs, bundles
-/// `ui/src/main.ts` with esbuild into `$OUT_DIR/ui-dist/app.js` (minified
+/// `ui/src/main.ts` with esbuild into `$OUT_DIR/ui-dist/` (minified
 /// in the release profile), and copies the static files next to the
-/// bundle.
+/// bundle. Splitting builds finish with [`finalize_hashing`]: the
+/// manifest and the stamped index page.
 ///
 /// # Errors
 /// Returns an error when not run through Cargo, when the local
@@ -74,6 +82,9 @@ pub fn build(config: UiBuild) -> anyhow::Result<()> {
     }
     bundle(&ui_dir, &dist_dir, &config)?;
     copy_static(&ui_dir, &dist_dir, config.static_files)?;
+    if config.splitting {
+        finalize_hashing(&dist_dir)?;
+    }
     Ok(())
 }
 
@@ -117,12 +128,14 @@ fn bundle(ui_dir: &Path, dist_dir: &Path, config: &UiBuild) -> anyhow::Result<()
         "--target=es2022",
     ]);
     if config.splitting {
-        // The entry keeps its unversioned name (index.html and the asset
-        // routes reference app.js); chunks are content-hashed under
-        // chunks/, served by the workshop server's chunk route.
+        // Every bundle file is content-hashed: the entry lands under
+        // bundle/ (index.html is stamped with the hashed URLs by
+        // finalize_hashing, and the server's asset routes resolve the
+        // logical names through manifest.json); chunks are content-hashed
+        // under chunks/, served by the workshop server's chunk route.
         command.arg("--splitting");
         command.arg(format!("--outdir={}", dist_dir.display()));
-        command.arg("--entry-names=app");
+        command.arg("--entry-names=bundle/app-[hash]");
         command.arg("--chunk-names=chunks/[name]-[hash]");
     } else {
         command.arg(format!("--outfile={}", dist_dir.join("app.js").display()));
@@ -200,4 +213,54 @@ fn copy_static(ui_dir: &Path, dist_dir: &Path, static_files: &[&str]) -> anyhow:
             .map_err(|error| anyhow::anyhow!("copy ui/{file} into the bundle output: {error}"))?;
     }
     Ok(())
+}
+
+/// Finishes a content-hashed build: writes `manifest.json` mapping the
+/// logical names (`app.js`, `app.css`) to the hashed files under
+/// `bundle/`, and stamps the copied `index.html` with the hashed URLs so
+/// the page loads the immutable assets directly. The workshop server's
+/// asset routes resolve the logical names through the manifest and mark
+/// the hashed files `Cache-Control: immutable`. Mirrored in the workshop
+/// UI's `build.mjs` stamp step.
+fn finalize_hashing(dist_dir: &Path) -> anyhow::Result<()> {
+    let script = hashed_entry(dist_dir, ".js")?;
+    let styles = hashed_entry(dist_dir, ".css")?;
+    let manifest = format!("{{\n  \"app.js\": \"{script}\",\n  \"app.css\": \"{styles}\"\n}}\n");
+    std::fs::write(dist_dir.join("manifest.json"), manifest)
+        .map_err(|error| anyhow::anyhow!("write the asset manifest: {error}"))?;
+    let index_path = dist_dir.join("index.html");
+    let html = std::fs::read_to_string(&index_path)
+        .map_err(|error| anyhow::anyhow!("read the copied index.html: {error}"))?;
+    let stamped = html
+        .replace("href=\"/app.css\"", &format!("href=\"/{styles}\""))
+        .replace("src=\"/app.js\"", &format!("src=\"/{script}\""));
+    if stamped == html {
+        return Err(anyhow::anyhow!(
+            "index.html did not reference /app.js and /app.css; the stamp found nothing"
+        ));
+    }
+    std::fs::write(&index_path, stamped)
+        .map_err(|error| anyhow::anyhow!("write the stamped index.html: {error}"))?;
+    Ok(())
+}
+
+/// Finds the single hashed entry output of one kind under `bundle/`,
+/// returning its dist-relative path. The output tree is rebuilt from
+/// scratch on every build, so exactly one match must exist.
+fn hashed_entry(dist_dir: &Path, extension: &str) -> anyhow::Result<String> {
+    let bundle_dir = dist_dir.join("bundle");
+    let mut matches: Vec<String> = std::fs::read_dir(&bundle_dir)
+        .map_err(|error| anyhow::anyhow!("list {}: {error}", bundle_dir.display()))?
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("app-") && name.ends_with(extension))
+        .collect();
+    matches.sort_unstable();
+    match matches.as_slice() {
+        [name] => Ok(format!("bundle/{name}")),
+        _ => Err(anyhow::anyhow!(
+            "expected exactly one bundle/app-*{extension} output, found {}",
+            matches.len()
+        )),
+    }
 }
