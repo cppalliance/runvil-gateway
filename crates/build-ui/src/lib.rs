@@ -53,7 +53,7 @@ pub struct UiBuild {
 /// Runs the UI build: declares the watched inputs, bundles
 /// `ui/src/main.ts` with esbuild into `$OUT_DIR/ui-dist/` (minified
 /// in the release profile), and copies the static files next to the
-/// bundle. Splitting builds finish with [`finalize_hashing`]: the
+/// bundle. Splitting builds finish with `finalize_hashing`: the
 /// manifest and the stamped index page.
 ///
 /// # Errors
