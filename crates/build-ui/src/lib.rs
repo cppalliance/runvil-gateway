@@ -73,17 +73,29 @@ pub fn build(config: UiBuild) -> anyhow::Result<()> {
     let dist_dir = out_dir.join("ui-dist");
 
     watch(&ui_dir, &config);
+    build_in(&ui_dir, &dist_dir, config)
+}
 
+/// Path-explicit variant of [`build`]: bundles `ui_dir/src/main.ts` into
+/// `dist_dir` without reading Cargo's environment. Tests use it to run
+/// the Rust implementer against a scratch output directory (setting
+/// process environment would require `unsafe`), and to compare the
+/// result against the Node build script's `--out` output.
+///
+/// # Errors
+/// Returns an error when the local esbuild install is missing or fails,
+/// or when a static file cannot be copied.
+pub fn build_in(ui_dir: &Path, dist_dir: &Path, config: UiBuild) -> anyhow::Result<()> {
     // The output tree is rebuilt from scratch so removed assets never
     // linger into what debug builds serve and release builds embed.
     if dist_dir.exists() {
-        std::fs::remove_dir_all(&dist_dir)
+        std::fs::remove_dir_all(dist_dir)
             .map_err(|error| anyhow::anyhow!("clear {}: {error}", dist_dir.display()))?;
     }
-    bundle(&ui_dir, &dist_dir, &config)?;
-    copy_static(&ui_dir, &dist_dir, config.static_files)?;
+    bundle(ui_dir, dist_dir, &config)?;
+    copy_static(ui_dir, dist_dir, config.static_files)?;
     if config.splitting {
-        finalize_hashing(&dist_dir)?;
+        finalize_hashing(dist_dir)?;
     }
     Ok(())
 }
