@@ -1,0 +1,332 @@
+//! Tidy-style architecture checks for the workshop server decomposition.
+//!
+//! Each check returns a list of human-readable violations. The `#[test]`
+//! wrappers assert the lists are empty, so `cargo test -p build-xtask`
+//! enforces the architecture; `cargo xtask tidy` prints the same report
+//! on demand.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// Tier 0: vocabulary crates. No internal `workshop-*` dependencies.
+const VOCABULARY: &[&str] = &["workshop-protocol", "workshop-registry", "workshop-support"];
+/// Tier 1: domain services. Depend on vocabulary crates only.
+const SERVICES: &[&str] = &["workshop-gateway", "workshop-menu", "workshop-status"];
+/// Tier 2: features. Depend on vocabulary and service crates.
+const FEATURES: &[&str] = &["workshop-sessions", "workshop-workspace"];
+/// Tier 3: the shell. May depend on every lower tier.
+const SHELL: &[&str] = &["workshop-server"];
+
+/// File-line ceiling from the `AGENTS.md` structural rules.
+const MAX_FILE_LINES: usize = 500;
+
+/// Marker in a crate's `lib.rs` (or `main.rs`) crate docs opting the crate
+/// into the decomposed-architecture checks. The `new-crate` scaffolder emits
+/// it; crates outside the decomposition are left alone.
+const INVARIANT_MARKER: &str = "//! ## Invariants";
+
+/// Run every check and return all violations.
+#[must_use]
+pub(crate) fn all_violations(root: &Path) -> Vec<String> {
+    let mut violations = tier_dependency_violations(root);
+    violations.extend(file_ceiling_violations(root));
+    violations.extend(lint_inheritance_violations(root));
+    violations
+}
+
+/// The internal `workshop-*` crates a tiered crate may depend on, or `None`
+/// when `name` is not part of the decomposition's crate map.
+fn allowed_dependencies(name: &str) -> Option<Vec<&'static str>> {
+    let allowed = if name == "workshop-registry" {
+        // The proxy slots speak the wire types: the status push-channel
+        // slot carries `workshop-protocol`'s `StatusBarUpdate`.
+        vec!["workshop-protocol"]
+    } else if VOCABULARY.contains(&name) {
+        Vec::new()
+    } else if SERVICES.contains(&name) {
+        VOCABULARY.to_vec()
+    } else if FEATURES.contains(&name) {
+        [VOCABULARY, SERVICES].concat()
+    } else if SHELL.contains(&name) {
+        [VOCABULARY, SERVICES, FEATURES].concat()
+    } else {
+        return None;
+    };
+    Some(allowed)
+}
+
+/// Check that tiered `workshop-*` crates depend only on lower tiers.
+///
+/// Every tiered crate has landed, so a missing manifest is a violation,
+/// not a crate to skip.
+#[must_use]
+pub(crate) fn tier_dependency_violations(root: &Path) -> Vec<String> {
+    let mut violations = Vec::new();
+    for name in [VOCABULARY, SERVICES, FEATURES, SHELL].concat() {
+        let Some(allowed) = allowed_dependencies(name) else {
+            continue;
+        };
+        let manifest_path = root.join("crates").join(name).join("Cargo.toml");
+        let Ok(text) = fs::read_to_string(&manifest_path) else {
+            violations.push(format!(
+                "{name}: tiered crate has no manifest at {}",
+                manifest_path.display()
+            ));
+            continue;
+        };
+        let manifest: toml::Value = match toml::from_str(&text) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                violations.push(format!(
+                    "{}: unparseable manifest: {error}",
+                    manifest_path.display()
+                ));
+                continue;
+            }
+        };
+        for dep in workshop_dependencies(&manifest) {
+            if dep == name {
+                continue; // self dev-dependency for test fixtures
+            }
+            if !allowed.contains(&dep.as_str()) {
+                violations.push(format!(
+                    "{name} depends on {dep}, which its tier forbids (allowed: {})",
+                    allowed.join(", ")
+                ));
+            }
+        }
+    }
+    violations
+}
+
+/// Collect the `workshop-*` dependency names of every kind (normal, dev,
+/// build, and target-specific) declared in a manifest.
+fn workshop_dependencies(manifest: &toml::Value) -> Vec<String> {
+    let mut names = Vec::new();
+    for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        if let Some(table) = manifest.get(kind).and_then(toml::Value::as_table) {
+            collect_workshop_deps(table, &mut names);
+        }
+    }
+    if let Some(targets) = manifest.get("target").and_then(toml::Value::as_table) {
+        for target in targets.values() {
+            for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                if let Some(table) = target.get(kind).and_then(toml::Value::as_table) {
+                    collect_workshop_deps(table, &mut names);
+                }
+            }
+        }
+    }
+    names
+}
+
+fn collect_workshop_deps(table: &toml::map::Map<String, toml::Value>, names: &mut Vec<String>) {
+    for (key, value) in table {
+        let package = value
+            .get("package")
+            .and_then(toml::Value::as_str)
+            .unwrap_or(key);
+        if package.starts_with("workshop-") && !names.contains(&package.to_owned()) {
+            names.push(package.to_owned());
+        }
+    }
+}
+
+/// Check the 500-line file ceiling on every crate participating in the
+/// decomposed architecture (its `lib.rs` or `main.rs` carries the invariant
+/// marker).
+#[must_use]
+pub(crate) fn file_ceiling_violations(root: &Path) -> Vec<String> {
+    let mut violations = Vec::new();
+    for dir in participating_crates(root) {
+        for file in rust_files(&dir) {
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            let lines = text.lines().count();
+            if lines > MAX_FILE_LINES {
+                violations.push(format!(
+                    "{} has {lines} lines, over the {MAX_FILE_LINES}-line ceiling",
+                    file.display()
+                ));
+            }
+        }
+    }
+    violations
+}
+
+/// Check that every participating crate inherits `[lints] workspace = true`
+/// (which carries `unreachable_pub`) and that the workspace root sets it.
+#[must_use]
+pub(crate) fn lint_inheritance_violations(root: &Path) -> Vec<String> {
+    let mut violations = Vec::new();
+    let root_manifest = root.join("Cargo.toml");
+    match fs::read_to_string(&root_manifest)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+    {
+        Some(manifest) => {
+            let set = manifest
+                .get("workspace")
+                .and_then(|w| w.get("lints"))
+                .and_then(|l| l.get("rust"))
+                .and_then(|r| r.get("unreachable_pub"));
+            if set.is_none() {
+                violations.push(
+                    "workspace root does not set `unreachable_pub` in [workspace.lints.rust]"
+                        .to_owned(),
+                );
+            }
+        }
+        None => violations.push(format!("{}: unparseable manifest", root_manifest.display())),
+    }
+    for dir in participating_crates(root) {
+        let manifest_path = dir.join("Cargo.toml");
+        let inherits = fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+            .and_then(|manifest| {
+                manifest
+                    .get("lints")
+                    .and_then(|l| l.get("workspace"))
+                    .and_then(toml::Value::as_bool)
+            })
+            .unwrap_or(false);
+        if !inherits {
+            violations.push(format!(
+                "{} does not inherit `[lints] workspace = true`",
+                manifest_path.display()
+            ));
+        }
+    }
+    violations
+}
+
+/// Crates under `crates/` whose crate docs carry the invariant marker.
+fn participating_crates(root: &Path) -> Vec<PathBuf> {
+    let mut crates = Vec::new();
+    let Ok(entries) = fs::read_dir(root.join("crates")) else {
+        return crates;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let marked = ["src/lib.rs", "src/main.rs"].iter().any(|candidate| {
+            fs::read_to_string(dir.join(candidate))
+                .is_ok_and(|text| text.contains(INVARIANT_MARKER))
+        });
+        if marked {
+            crates.push(dir);
+        }
+    }
+    crates
+}
+
+/// Every `.rs` file under `dir`, recursively.
+fn rust_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_rust_files(dir, &mut files);
+    files
+}
+
+fn collect_rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if entry.file_name() != "target" {
+                collect_rust_files(&path, files);
+            }
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn workspace_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("build-xtask lives at <root>/crates/build-xtask")
+            .to_path_buf()
+    }
+
+    #[test]
+    fn workshop_tier_dependencies_flow_one_way() {
+        let violations = tier_dependency_violations(&workspace_root());
+        assert!(
+            violations.is_empty(),
+            "tier violations:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    #[test]
+    fn participating_crates_respect_the_file_line_ceiling() {
+        let violations = file_ceiling_violations(&workspace_root());
+        assert!(
+            violations.is_empty(),
+            "ceiling violations:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    #[test]
+    fn participating_crates_inherit_workspace_lints() {
+        let violations = lint_inheritance_violations(&workspace_root());
+        assert!(
+            violations.is_empty(),
+            "lint violations:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    #[test]
+    fn a_tiered_crate_whose_manifest_is_missing_is_reported_not_skipped() {
+        let root = tempfile::TempDir::new().expect("tempdir");
+        std::fs::create_dir_all(root.path().join("crates")).expect("the crates directory creates");
+        let violations = tier_dependency_violations(root.path());
+        let tiered = [VOCABULARY, SERVICES, FEATURES, SHELL].concat();
+        assert_eq!(
+            violations.len(),
+            tiered.len(),
+            "every tiered crate's missing manifest is reported: {violations:?}"
+        );
+        for name in tiered {
+            assert!(
+                violations.iter().any(|v| v.contains(name)),
+                "{name} is named in the violations: {violations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tier_table_grants_each_tier_only_lower_tiers() {
+        assert_eq!(allowed_dependencies("workshop-protocol"), Some(Vec::new()));
+        assert_eq!(
+            allowed_dependencies("workshop-registry"),
+            Some(vec!["workshop-protocol"])
+        );
+        assert_eq!(
+            allowed_dependencies("workshop-gateway"),
+            Some(VOCABULARY.to_vec())
+        );
+        assert_eq!(
+            allowed_dependencies("workshop-sessions"),
+            Some([VOCABULARY, SERVICES].concat())
+        );
+        assert_eq!(
+            allowed_dependencies("workshop-server"),
+            Some([VOCABULARY, SERVICES, FEATURES].concat())
+        );
+        assert_eq!(allowed_dependencies("gateway"), None);
+    }
+}
