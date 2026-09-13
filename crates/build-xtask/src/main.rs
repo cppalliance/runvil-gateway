@@ -8,6 +8,7 @@
 //! - Every file in this crate stays under 500 lines; split first, then edit.
 
 mod new_crate;
+mod product;
 mod tidy;
 
 use std::path::Path;

@@ -31,6 +31,7 @@ pub(crate) fn all_violations(root: &Path) -> Vec<String> {
     let mut violations = tier_dependency_violations(root);
     violations.extend(file_ceiling_violations(root));
     violations.extend(lint_inheritance_violations(root));
+    violations.extend(crate::product::product_boundary_violations(root));
     violations
 }
 
