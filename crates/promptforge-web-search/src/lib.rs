@@ -9,9 +9,9 @@
 //!
 //! The whole supported surface is [`WebSearch`]; the endpoint validation and
 //! the redacted bearer token are crate-private implementation details. The
-//! tool vocabulary ([`Tool`](promptforge_tools::Tool),
-//! [`ToolError`](promptforge_tools::ToolError), and their kinds) comes from
-//! `promptforge-tools`.
+//! tool vocabulary ([`Tool`](shared_promptforge_api::tools::Tool),
+//! [`ToolError`](shared_promptforge_api::tools::ToolError), and their kinds)
+//! comes from `shared-promptforge-api`.
 
 mod endpoint;
 mod secret;

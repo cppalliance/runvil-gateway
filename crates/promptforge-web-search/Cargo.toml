@@ -13,7 +13,7 @@ categories = ["web-programming::http-client", "api-bindings"]
 documentation = "https://cppalliance.github.io/promptforge/"
 
 [dependencies]
-promptforge-tools.workspace = true
+shared-promptforge-api.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true

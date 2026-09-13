@@ -15,7 +15,7 @@ promptforge-web-search = "0.1"
 
 ```rust
 use promptforge_web_search::WebSearch;
-use promptforge_tools::Tool;
+use shared_promptforge_api::tools::Tool;
 
 let tool = WebSearch::new("https://gateway.example.com/v1", "bearer-token")?;
 let output = tool.call(serde_json::json!({ "query": "rust async runtime" })).await?;

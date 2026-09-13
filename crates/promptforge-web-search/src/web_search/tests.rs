@@ -2,7 +2,7 @@ use super::{
     MAX_COUNT, MAX_DOMAINS, MAX_ERROR_BODY, MAX_QUERY_LEN, MAX_RESPONSE_BODY, MAX_STRING_LEN,
     WebSearch,
 };
-use promptforge_tools::{OutputTrust, Tool, ToolErrorKind, ToolId};
+use shared_promptforge_api::tools::{OutputTrust, Tool, ToolErrorKind, ToolId};
 
 use std::net::SocketAddr;
 use std::time::Duration;
