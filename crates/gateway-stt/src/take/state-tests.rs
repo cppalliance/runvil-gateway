@@ -9,6 +9,7 @@ use crate::segment::ForcedBoundary;
 use crate::take::final_outcome::{FinalRangeOutcome, SkipReason};
 use crate::take::window::AcceptedHypothesis;
 
+#[path = "state-tests-live-prefix.rs"]
 mod live_prefix;
 
 #[test]

@@ -51,7 +51,7 @@ mod tests {
 
     /// Trimmed 2026-09-14 sheet excerpt: real OpenRouter ids, SKU
     /// variants included.
-    const FIXTURE: &str = include_str!("../../../tests/fixtures/2026-09-14-openrouter.json");
+    const FIXTURE: &str = include_str!("../../tests/fixtures/2026-09-14-openrouter.json");
 
     /// The fixture ids with the provider's taxonomy applied, by id.
     fn classified() -> BTreeMap<String, ModelEntry> {

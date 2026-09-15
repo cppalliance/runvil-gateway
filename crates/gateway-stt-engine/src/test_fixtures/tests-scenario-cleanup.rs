@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use super::*;
 
+#[path = "tests-scenario-cleanup-construction.rs"]
 mod construction;
+#[path = "tests-scenario-cleanup-decode.rs"]
 mod decode;
 
 const WAIT: Duration = Duration::from_secs(1);

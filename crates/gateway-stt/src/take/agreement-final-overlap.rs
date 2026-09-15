@@ -394,4 +394,5 @@ fn bounded_edit_distance(
 }
 
 #[cfg(test)]
+#[path = "agreement-final-overlap-tests.rs"]
 mod tests;

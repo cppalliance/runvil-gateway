@@ -33,7 +33,7 @@ mod tests {
     use super::apply;
 
     /// Trimmed 2026-09-14 sheet excerpt: the real Anthropic ids.
-    const FIXTURE: &str = include_str!("../../../tests/fixtures/2026-09-14-anthropic.json");
+    const FIXTURE: &str = include_str!("../../tests/fixtures/2026-09-14-anthropic.json");
 
     /// The fixture ids with the provider's taxonomy applied, by id.
     fn classified() -> BTreeMap<String, ModelEntry> {

@@ -2,6 +2,7 @@ use super::TakeState;
 use crate::segment::ForcedBoundary;
 use crate::take::final_outcome::FinalRangeOutcome;
 
+#[path = "state-alignment-tests-adversaries.rs"]
 mod adversaries;
 
 #[test]
