@@ -83,10 +83,10 @@
     {
       "at_ms": 6150,
       "revision": 9,
-      "transcript": "Okay listen up this is what I want. I want you to create a plan. I want you to create",
+      "transcript": "Okay listen up this is what I want. I want you to create a plan.",
       "finalized": "Okay listen up this is what I want.",
       "agreed": " I want you to create a plan.",
-      "tentative": " I want you to create",
+      "tentative": "",
       "audio_start_ms": 3100,
       "audio_end_ms": 6000
     },
