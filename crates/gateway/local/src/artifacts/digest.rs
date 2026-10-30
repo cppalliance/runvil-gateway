@@ -113,8 +113,9 @@ pub(super) fn file_digest_with_progress(
 /// A deterministic digest over the installed file tree under `root`.
 ///
 /// The digest is stable across runs: entries are sorted by relative path and
-/// each contributes its path, mode, and content digest, so an install marker
-/// can later detect any drift in the extracted tree.
+/// each file contributes its path, mode, and content digest, and each symlink
+/// its path, [`LINK_MODE`], and target, so an install marker can later detect
+/// any drift in the extracted tree.
 ///
 /// # Errors
 /// Returns [`LocalError`] when the tree cannot be walked or a file cannot be read.
@@ -126,10 +127,42 @@ pub(super) fn tree_digest(root: &Path) -> Result<String> {
     for (relative, path) in files {
         tree_hasher.update((relative.len() as u64).to_le_bytes());
         tree_hasher.update(relative.as_bytes());
-        tree_hasher.update(file_mode(&path)?.to_le_bytes());
-        tree_hasher.update(file_digest(&path)?.as_bytes());
+        if let Some(target) = link_target(&path)? {
+            tree_hasher.update(LINK_MODE.to_le_bytes());
+            tree_hasher.update(target.as_bytes());
+        } else {
+            tree_hasher.update(file_mode(&path)?.to_le_bytes());
+            tree_hasher.update(file_digest(&path)?.as_bytes());
+        }
     }
     Ok(hex_digest(tree_hasher))
+}
+
+/// The mode word a symlink contributes in place of a file's permission bits,
+/// which never exceed `0o7777`.
+const LINK_MODE: u32 = u32::MAX;
+
+/// A symlink's target text, or `None` for a regular file.
+fn link_target(path: &Path) -> Result<Option<String>> {
+    let inspect = |source| LocalError::Io {
+        operation: "inspect installation entry",
+        path: path.to_owned(),
+        source,
+    };
+    if !fs::symlink_metadata(path).map_err(inspect)?.is_symlink() {
+        return Ok(None);
+    }
+    let target = fs::read_link(path).map_err(|source| LocalError::Io {
+        operation: "read installation link",
+        path: path.to_owned(),
+        source,
+    })?;
+    target
+        .to_str()
+        .map(|target| Some(target.to_owned()))
+        .ok_or_else(|| LocalError::InvalidPath {
+            path: path.to_owned(),
+        })
 }
 
 #[cfg(unix)]
@@ -178,7 +211,9 @@ fn collect_tree_files(
         })?;
         if file_type.is_dir() {
             collect_tree_files(root, &path, files)?;
-        } else if file_type.is_file() && path != root.join(INSTALL_MARKER) {
+        } else if (file_type.is_file() || file_type.is_symlink())
+            && path != root.join(INSTALL_MARKER)
+        {
             let relative = path
                 .strip_prefix(root)
                 .map_err(|source| LocalError::Io {
@@ -190,7 +225,7 @@ fn collect_tree_files(
                 .ok_or_else(|| LocalError::InvalidPath { path: path.clone() })?
                 .replace('\\', "/");
             files.push((relative, path));
-        } else if !file_type.is_file() {
+        } else if !file_type.is_file() && !file_type.is_symlink() {
             return Err(LocalError::UnsafeArchiveEntry {
                 archive: root.display().to_string(),
                 entry: path.display().to_string(),
