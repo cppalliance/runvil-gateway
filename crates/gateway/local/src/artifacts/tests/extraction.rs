@@ -63,8 +63,8 @@ fn tar_gz_with_symlink() -> Vec<u8> {
 
 #[test]
 fn extract_tar_gz_rejects_symlink_entries() {
-    // ART-007: a tar entry that is neither a regular file nor a directory (here
-    // a symlink) is rejected rather than materialized in the cache tree.
+    // ART-007: a tar symlink whose target leaves its folder (here an absolute
+    // path) is rejected rather than materialized in the cache tree.
     let dir = TempDir::new().expect("tempdir");
     let archive = dir.path().join("evil.tar.gz");
     std::fs::write(&archive, tar_gz_with_symlink()).expect("write archive");
@@ -114,8 +114,8 @@ fn zip_symlink(name: &str, target: &str) -> Vec<u8> {
 #[test]
 fn extract_rejects_every_non_regular_entry_class() {
     // ART-007: table-driven rejection of each unsafe/unsupported archive entry
-    // class - tar symlink/hardlink/char/block/fifo and a zip symlink - so none
-    // is materialized in the cache tree.
+    // class - an escaping tar symlink, tar hardlink/char/block/fifo, and a zip
+    // symlink - so none is materialized in the cache tree.
     let tar_cases: &[(tar::EntryType, Option<&str>)] = &[
         (tar::EntryType::Symlink, Some("/etc/passwd")),
         (tar::EntryType::Link, Some("llama-server")),
@@ -149,6 +149,92 @@ fn extract_rejects_every_non_regular_entry_class() {
         "zip symlink should be rejected, got {result:?}"
     );
     assert!(!dest.join("link").exists());
+}
+
+/// A llama.cpp-shaped tarball: one folder holding the server, a versioned
+/// library, and its SONAME link pointing at `link_target`.
+fn tar_gz_with_soname_link(link_target: &str) -> Vec<u8> {
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
+    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+    for (name, mode, body) in [
+        ("llama-b1/llama-server", 0o755, b"server".as_slice()),
+        ("llama-b1/libllama.so.0.0.1", 0o644, b"library".as_slice()),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(body.len() as u64);
+        header.set_mode(mode);
+        header.set_path(name).expect("set path");
+        header.set_cksum();
+        builder.append(&header, body).expect("append file");
+    }
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(tar::EntryType::Symlink);
+    header.set_size(0);
+    header.set_mode(0o777);
+    header.set_path("llama-b1/libllama.so.0").expect("set path");
+    header.set_link_name(link_target).expect("set link");
+    header.set_cksum();
+    builder.append(&header, io::empty()).expect("append link");
+    builder
+        .into_inner()
+        .expect("finish tar")
+        .finish()
+        .expect("finish gz")
+}
+
+#[cfg(unix)]
+#[test]
+fn extract_tar_gz_keeps_a_sibling_link_and_the_tree_digest_records_its_target() {
+    // The llama.cpp tarballs for Linux and macOS link each library's SONAME
+    // to its versioned file; the server loads the library through the link.
+    let dir = TempDir::new().expect("tempdir");
+    let mut digests = Vec::new();
+    for (index, target) in ["libllama.so.0.0.1", "llama-server"]
+        .into_iter()
+        .enumerate()
+    {
+        let archive = dir.path().join(format!("llama-{index}.tar.gz"));
+        std::fs::write(&archive, tar_gz_with_soname_link(target)).expect("write archive");
+        let dest = dir.path().join(format!("out-{index}"));
+        std::fs::create_dir(&dest).expect("mkdir dest");
+        extract_archive(&archive, &dest, ArchiveKind::TarGz).expect("extract");
+        let link = dest.join("llama-b1").join("libllama.so.0");
+        assert_eq!(
+            std::fs::read_link(&link).expect("read link"),
+            std::path::Path::new(target)
+        );
+        assert_eq!(
+            find_executable(&dest, "llama-server", "llama").expect("server"),
+            dest.join("llama-b1").join("llama-server")
+        );
+        digests.push(super::super::digest::tree_digest(&dest).expect("tree digest"));
+    }
+    assert_ne!(
+        digests[0], digests[1],
+        "a retargeted link must change the tree digest"
+    );
+}
+
+#[test]
+fn extract_tar_gz_rejects_a_link_whose_target_leaves_its_folder() {
+    for target in ["../escape", "sub/file", "/etc/passwd", "..", ".", "a:b"] {
+        let dir = TempDir::new().expect("tempdir");
+        let archive = dir.path().join("llama.tar.gz");
+        std::fs::write(&archive, tar_gz_with_soname_link(target)).expect("write archive");
+        let dest = dir.path().join("out");
+        std::fs::create_dir(&dest).expect("mkdir dest");
+        let result = extract_archive(&archive, &dest, ArchiveKind::TarGz);
+        assert!(
+            matches!(result, Err(LocalError::UnsafeArchiveEntry { .. })),
+            "a link to {target} should be rejected, got {result:?}"
+        );
+        assert!(
+            std::fs::symlink_metadata(dest.join("llama-b1").join("libllama.so.0")).is_err(),
+            "a link to {target} was created"
+        );
+    }
 }
 
 #[test]

@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
@@ -125,8 +125,19 @@ fn extract_tar_gz(
                 source,
             })?
             .into_owned();
+        let entry_type = entry.header().entry_type();
+        let sibling_link = if entry_type.is_symlink() {
+            entry
+                .link_name()
+                .ok()
+                .flatten()
+                .filter(|target| sibling_name(target))
+                .map(std::borrow::Cow::into_owned)
+        } else {
+            None
+        };
         if !safe_archive_path(&entry_path)
-            || !(entry.header().entry_type().is_file() || entry.header().entry_type().is_dir())
+            || !(entry_type.is_file() || entry_type.is_dir() || sibling_link.is_some())
         {
             return Err(LocalError::UnsafeArchiveEntry {
                 archive: archive.display().to_string(),
@@ -137,6 +148,12 @@ fn extract_tar_gz(
         validate_tree_path(destination, &output)?;
         if let Some(parent) = output.parent() {
             ensure_cache_directory(destination, parent)?;
+        }
+        if let Some(target) = sibling_link {
+            create_sibling_link(archive, &entry_path, &target, &output)?;
+            done = done.saturating_add(1);
+            report_entries(progress, total, done);
+            continue;
         }
         let unpacked = entry
             .unpack_in(destination)
@@ -234,6 +251,35 @@ fn extract_zip(
         report_entries(progress, total, done);
     }
     Ok(())
+}
+
+/// Whether a symlink target names a file in the link's own directory: one
+/// normal component, so the link cannot leave the extracted tree. The
+/// llama.cpp tarballs link each library's SONAME to its versioned file this
+/// way (`libllama.so.0 -> libllama.so.0.0.10082`).
+fn sibling_name(target: &Path) -> bool {
+    let mut components = target.components();
+    matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none()
+        && target.to_str().is_some_and(safe_archive_name)
+}
+
+#[cfg(unix)]
+fn create_sibling_link(_archive: &Path, _entry: &Path, target: &Path, output: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, output).map_err(|source| LocalError::Io {
+        operation: "create extracted link",
+        path: output.to_owned(),
+        source,
+    })
+}
+
+// The Windows assets are zips, which never carry links.
+#[cfg(not(unix))]
+fn create_sibling_link(archive: &Path, entry: &Path, _target: &Path, _output: &Path) -> Result<()> {
+    Err(LocalError::UnsafeArchiveEntry {
+        archive: archive.display().to_string(),
+        entry: entry.display().to_string(),
+    })
 }
 
 pub(super) fn safe_archive_path(path: &Path) -> bool {
