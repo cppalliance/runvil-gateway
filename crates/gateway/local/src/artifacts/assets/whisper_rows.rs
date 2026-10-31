@@ -15,7 +15,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "windows-x86_64",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-windows-x86_64.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64.zip",
             sha256: "7d4b402495dd8ce1574abcdde3fb37823155571efc3f056caaf3c2b4220de42f",
             archive_kind: ArchiveKind::Zip,
         },
@@ -37,7 +37,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "windows-x86_64-cuda",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-windows-x86_64-cuda.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64-cuda.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64-cuda.zip",
             sha256: "b2683fe38fd28d80fdb42d123c3e03d480786095b4a0affa0542ae1ce88ac752",
             archive_kind: ArchiveKind::Zip,
         },
@@ -53,7 +53,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "macos-aarch64-metal",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-macos-aarch64-metal.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-macos-aarch64-metal.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-macos-aarch64-metal.zip",
             sha256: "3afe9e7b5754af9bb0231e6b817f2a3dc164e8d72f7e5dab11aaab529cd0e37f",
             archive_kind: ArchiveKind::Zip,
         },
@@ -69,7 +69,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "macos-x86_64",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-macos-x86_64.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-macos-x86_64.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-macos-x86_64.zip",
             sha256: "7dc019031785d1d9d5da3e0235cfd4e161b9b28dee842ef743d9a11965af081a",
             archive_kind: ArchiveKind::Zip,
         },
@@ -85,7 +85,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "linux-x86_64",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-linux-x86_64.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-linux-x86_64.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-linux-x86_64.zip",
             sha256: "1f29906b27587b5ed3412bdcaaa335cd2058e2291c496a73c03a8977e387d427",
             archive_kind: ArchiveKind::Zip,
         },
@@ -105,7 +105,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "linux-x86_64-cuda",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-linux-x86_64-cuda.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-linux-x86_64-cuda.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-linux-x86_64-cuda.zip",
             sha256: "d08cfcdfc72ee373745b19a71da8fd67d32fa42ac8d63cfb4a28034937eafa97",
             archive_kind: ArchiveKind::Zip,
         },
@@ -121,7 +121,7 @@ pub(super) const WHISPER_ASSETS: &[WhisperAsset<'static>] = &[
         platform: "linux-aarch64",
         archive: ArchiveRef {
             archive_name: "whisper-b4938-linux-aarch64.zip",
-            url: "https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-linux-aarch64.zip",
+            url: "https://github.com/cppalliance/runvil-gateway/releases/download/whisper-lib-b4938/whisper-b4938-linux-aarch64.zip",
             sha256: "30033c694a77dc5a82a73a99f846461af38820efc558fd0e2c0665c43fbeee1f",
             archive_kind: ArchiveKind::Zip,
         },
