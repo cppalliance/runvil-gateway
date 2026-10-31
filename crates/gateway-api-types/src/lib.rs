@@ -20,10 +20,10 @@ pub mod progress;
 pub use metadata::{Capabilities, ModelInfo, ModelKind, ThinkingMode};
 pub use progress::Progress;
 
-/// The sheet schema version this reader accepts: the writer in
-/// `gateway-cloud-providers` stamps it and the gateway reader gates on it.
-/// Bump only on removals and renames; additive fields are marked
-/// `#[serde(default)]` so a lagging reader survives them.
+/// The sheet schema version this reader accepts: the publisher stamps it and
+/// the gateway reader gates on it. Bump only on removals and renames;
+/// additive fields are marked `#[serde(default)]` so a lagging reader
+/// survives them.
 pub const ACCEPTED_SHEET_SCHEMA_VERSION: u32 = 1;
 
 /// The schema of `Sheet::generated_at`: one RFC 3339 instant, the shape

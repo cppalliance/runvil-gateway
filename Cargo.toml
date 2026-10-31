@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/gateway/app", "crates/gateway/cloud-providers", "crates/gateway/config", "crates/gateway/config-ui", "crates/gateway/local", "crates/gateway/logging", "crates/gateway/progress", "crates/gateway/protocol", "crates/gateway/routing", "crates/gateway/web-search", "crates/gateway/stt/api", "crates/gateway/stt/engine", "crates/gateway/stt/backend-whisper", "crates/gateway/stt/whisper-ffi"]
+members = ["crates/*", "crates/gateway/app", "crates/gateway/config", "crates/gateway/config-ui", "crates/gateway/local", "crates/gateway/logging", "crates/gateway/progress", "crates/gateway/protocol", "crates/gateway/routing", "crates/gateway/web-search", "crates/gateway/stt/api", "crates/gateway/stt/engine", "crates/gateway/stt/backend-whisper", "crates/gateway/stt/whisper-ffi"]
 # crates/shared-ui is not a Rust crate: it is the TypeScript and CSS package
 # the config UI consumes, so the crates/* glob skips it.
 # crates/gateway and crates/gateway/stt are manifestless containers holding
@@ -49,7 +49,6 @@ gateway-stt-backend-whisper = { path = "crates/gateway/stt/backend-whisper" }
 gateway-stt-engine = { path = "crates/gateway/stt/engine" }
 gateway-web-search = { path = "crates/gateway/web-search" }
 gateway-whisper-ffi = { path = "crates/gateway/stt/whisper-ffi" }
-hmac = "0.13"
 # WAV parsing for STT uploads and transcription test fixtures.
 hound = "3.5"
 # The Linux tray backend: a pure StatusNotifierItem over D-Bus, no GTK.
