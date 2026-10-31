@@ -3,7 +3,7 @@ name: Gateway release test
 # Reusable gate called by the cargo-dist release workflow as a host-job
 # (pre-publish, see host-jobs in dist-workspace.toml): the GitHub Release
 # is created only when this passes. Runs the built archive on a clean
-# machine: checksums, --version, boot, and the config page.
+# machine: checksums, the version string, boot, and the config page.
 
 on:
   workflow_call:

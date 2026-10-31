@@ -85,30 +85,28 @@ jobs:
             dist/llama-cuda-manifest.json
           if-no-files-found: error
 
+      # Say why the rest of the run does nothing, rather than leaving two
+      # skipped jobs with no explanation.
+      - name: Report the skipped GPU smoke
+        if: vars.RUNVIL_CUDA_RUNNER != 'true'
+        shell: bash
+        run: |
+          echo "the smoke and publish jobs are skipped: no runner with the self-hosted, windows, and cuda labels is registered on $GITHUB_REPOSITORY"
+          echo "::notice title=llama-cuda-blackwell stops after build::the CUDA smoke test needs a self-hosted GPU runner. Register one with the self-hosted, windows, and cuda labels, set the RUNVIL_CUDA_RUNNER repository variable to true, and re-run. The built zip is attached to this run as an artifact."
+
   smoke:
     needs: build
+    # The GPU smoke needs a self-hosted Windows CUDA runner, which is not
+    # registered on this repository yet. A job naming an unregistered runner
+    # queues forever and never reports, so it is gated on the
+    # RUNVIL_CUDA_RUNNER repository variable. With the variable false the
+    # build still runs and its artifact is downloadable; only the smoke and
+    # the publish that depends on it are skipped.
+    if: vars.RUNVIL_CUDA_RUNNER == 'true'
     runs-on: [self-hosted, windows, cuda]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-
-      # The gateway's default features build the config UI with esbuild.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install UI dependencies
-        working-directory: crates/workshop
-        run: npm ci
-
-      - name: Install config UI dependencies
-        working-directory: crates/gateway/config-ui/ui
-        run: npm ci
 
       - name: Download the build artifact
         uses: actions/download-artifact@v4

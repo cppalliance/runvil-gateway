@@ -81,9 +81,9 @@ jobs:
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
       # sure would be cool if github gave us proper conditionals...
-      # so here's a doubly-nested ternary-via-truthiness to try to provide the best possible
+      # so here's a doubly nested ternary via truthiness to try to provide the best possible
       # functionality based on whether this is a pull_request, and whether it's from a fork.
-      # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
+      # (PRs run on the *source* but secrets are usually on the *target*. That is good
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
@@ -143,11 +143,7 @@ jobs:
         with:
           "node-version": 22
           "cache": "npm"
-          "cache-dependency-path": |
-            crates/workshop/package-lock.json
-            crates/gateway/*/ui/package-lock.json
-      - name: "Install UI dependencies"
-        run: "npm ci --prefix crates/workshop"
+          "cache-dependency-path": crates/gateway/config-ui/ui/package-lock.json
       - name: "Install config UI dependencies"
         run: "npm ci --prefix crates/gateway/config-ui/ui"
       - name: Install dist

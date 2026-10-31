@@ -1,0 +1,255 @@
+name: CI
+
+# Build, test, document, and lint the Gateway workspace. Every job here is
+# Gateway work: the Workshop, Engine, and Harness crates stayed in the Runvil
+# repository.
+#
+# No job installs a toolchain. `rust-toolchain.toml` names the channel and its
+# components, and rustup installs exactly that on the first cargo call, so the
+# version lives in one file and cannot drift from CI.
+#
+# The config UI is built by `gateway-config-ui`'s build script (esbuild
+# through `build-ui`), so every cargo job runs one `npm ci` first. The same
+# setup is copied into the cargo-dist build by `dist-ci/build-setup.yml`;
+# keep the two in step.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Formatting needs neither Node nor a cache, and it fails in seconds.
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Format
+        run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/gateway/config-ui/ui/package-lock.json
+
+      - name: Install config UI dependencies
+        run: npm ci --prefix crates/gateway/config-ui/ui
+
+      # The workspace lints table denies clippy's `all` and `pedantic` groups,
+      # so any diagnostic fails this step.
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4dc1969decfa71b34f25aa7f3dd4656654d9ad1e # nextest
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/gateway/config-ui/ui/package-lock.json
+
+      - name: Install config UI dependencies
+        run: npm ci --prefix crates/gateway/config-ui/ui
+
+      - name: Build
+        run: cargo build --locked --workspace --all-features
+
+      # nextest rather than `cargo test`: .config/nextest.toml puts the STT
+      # suites in a `heavy` test group that caps their concurrency, because
+      # each of those tests spawns its own ggml worker pool. Plain `cargo
+      # test` would ignore that cap and oversubscribe the runner.
+      - name: Test
+        run: cargo nextest run --locked --workspace --all-features
+
+      # The headless shape drops the config UI crate and its Node pipeline.
+      # It is the build a server without a config page ships.
+      - name: Check the headless gateway
+        run: cargo check --locked -p gateway --no-default-features
+
+      # No build step may write into the repository: the UI bundle lands in
+      # OUT_DIR. Catch a regression here rather than in a stray diff.
+      - name: Clean tree
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "the build dirtied the repository:"
+            git status --porcelain
+            exit 1
+          fi
+
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/gateway/config-ui/ui/package-lock.json
+
+      - name: Install config UI dependencies
+        run: npm ci --prefix crates/gateway/config-ui/ui
+
+      # A broken intra-doc link has already cost this project a CI round trip,
+      # hence RUSTDOCFLAGS above. The workspace lints table denies
+      # broken_intra_doc_links too, so either path reports it.
+      - name: Docs
+        run: cargo doc --locked --workspace --no-deps --all-features
+
+  # The Gateway has Windows-only process-ownership code: the discovery lease
+  # and the launch lock. Before the split that code only ever ran inside the
+  # Workshop job, so it gets its own job here.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4dc1969decfa71b34f25aa7f3dd4656654d9ad1e # nextest
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/gateway/config-ui/ui/package-lock.json
+
+      - name: Install config UI dependencies
+        run: npm ci --prefix crates/gateway/config-ui/ui
+
+      - name: Build
+        run: cargo build --locked --workspace --all-features
+
+      # nextest here too, so the `heavy` group cap in .config/nextest.toml
+      # applies to the STT suites on both platforms.
+      - name: Test
+        run: cargo nextest run --locked --workspace --all-features
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny
+        run: cargo deny check
+
+      # The gateway holds vendor credentials, so it links exactly one rustls
+      # crypto backend, aws-lc-rs. This fails when `ring` re-enters its
+      # normal-edge closure through a reqwest bump, and when `cargo tree`
+      # itself cannot run. Clippy cannot see this: an unused duplicate crypto
+      # backend compiles clean, so the check stays.
+      - name: One rustls crypto backend in the gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! out="$(cargo tree --locked -p gateway -e normal -i ring --depth 0 2>&1)"; then
+            echo "cargo tree failed:"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          if printf '%s\n' "$out" | grep -v '^warning: nothing to print' | grep -q '^ring v'; then
+            echo "ring is linked into the gateway; aws-lc-rs is the only permitted rustls backend"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+
+  # The architecture checks. `cargo test -p build-xtask` runs the same
+  # functions, but `cargo xtask tidy` prints every violation in one report
+  # instead of stopping at the first failing assertion.
+  xtask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Tidy
+        run: cargo xtask tidy
+
+  # The config UI ships inside the gateway binary and is served at /config/,
+  # so its typecheck and jsdom tests get a job of their own. The cargo jobs
+  # only ever run its build script.
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/gateway/config-ui/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/gateway/config-ui/ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The `pretest` script builds the bundle the jsdom tests load.
+      - name: Test
+        run: npm test
+
+  # One required status check for branch protection: it fails when any job
+  # fails or is cancelled, so a cancelled job cannot read as green. `needs:`
+  # is a static list, so every new job must be added here or it bypasses the
+  # gate.
+  ci-green:
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, test, docs, windows, supply-chain, xtask, ui]
+    if: always()
+    steps:
+      - name: Verify every job succeeded
+        shell: bash
+        run: |
+          status=0
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            if [ "$result" != "success" ]; then
+              echo "a required job did not succeed: $result"
+              status=1
+            fi
+          done
+          exit $status

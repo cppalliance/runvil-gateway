@@ -1,8 +1,12 @@
 name: STT Miri
 
+# Miri runs the backend-neutral STT ownership tests on a pinned nightly. The
+# native Whisper lane needs facilities this repository does not have yet, so
+# it is gated; see the `fixtures` job.
+
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -43,11 +47,66 @@ jobs:
       - name: Check pure STT generation and session ownership
         run: cargo +nightly-2026-09-05 miri test -p gateway-stt --features test-fixtures miri_
 
+  # The native lane has two prerequisites that live outside this repository:
+  # a self-hosted Windows CUDA runner registered on it, and the two pinned
+  # native fixture archives published as releases on it. A job naming an
+  # unregistered runner queues forever and never reports, and a job whose
+  # download 404s goes red on every push. This job checks both and reports a
+  # skip with a message naming exactly what is missing, so a real regression
+  # in the lane can never be hidden behind a silent pass.
+  #
+  # To turn the lane on: register the runner with the `self-hosted`,
+  # `windows`, and `cuda` labels, set the repository variable
+  # RUNVIL_CUDA_RUNNER to `true`, and copy the `whisper-lib-b4938` and
+  # `stt-long-speech-1` releases over from the Runvil repository.
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check the runner variable and the native fixture releases
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUDA_RUNNER: ${{ vars.RUNVIL_CUDA_RUNNER }}
+        run: |
+          set -uo pipefail
+          missing=()
+          if [ "$CUDA_RUNNER" != "true" ]; then
+            missing+=("self-hosted runner: no runner with the self-hosted, windows, and cuda labels is registered on $GITHUB_REPOSITORY (the RUNVIL_CUDA_RUNNER repository variable is not set to true)")
+          fi
+          for spec in \
+            whisper-lib-b4938:whisper-b4938-windows-x86_64-cuda.zip \
+            stt-long-speech-1:stt-long-speech-1.zip
+          do
+            tag="${spec%%:*}"
+            asset="${spec#*:}"
+            if ! names="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>&1)"; then
+              missing+=("release asset: $GITHUB_REPOSITORY has no release $tag (it holds $asset on the Runvil repository)")
+            elif ! grep -qxF "$asset" <<<"$names"; then
+              missing+=("release asset: release $tag on $GITHUB_REPOSITORY has no $asset")
+            fi
+          done
+          if ((${#missing[@]} > 0)); then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "native-whisper is skipped until its prerequisites exist:"
+            for reason in "${missing[@]}"; do
+              echo "  - $reason"
+              echo "::notice title=native-whisper skipped::$reason"
+            done
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "the runner and both fixture releases are present; native-whisper runs"
+          fi
+
   native-whisper:
+    needs: fixtures
     # A self-hosted runner must never execute untrusted code: run this job
     # on pushes, dispatches, and same-repository PRs only. Fork PRs still
     # get the Miri jobs, which run on GitHub-hosted runners.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: needs.fixtures.outputs.ready == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, windows, cuda]
     timeout-minutes: 90
     steps:
@@ -63,7 +122,7 @@ jobs:
           New-Item -ItemType Directory -Path $fixture -Force | Out-Null
           $archive = Join-Path $fixture 'whisper.zip'
           Invoke-WebRequest `
-            -Uri 'https://github.com/cppalliance/runvil/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64-cuda.zip' `
+            -Uri "https://github.com/$env:GITHUB_REPOSITORY/releases/download/whisper-lib-b4938/whisper-b4938-windows-x86_64-cuda.zip" `
             -OutFile $archive
           $runtimeHash = (Get-FileHash $archive -Algorithm SHA256).Hash
           if ($runtimeHash -ne 'B2683FE38FD28D80FDB42D123C3E03D480786095B4A0AFFA0542AE1CE88AC752') {
@@ -123,7 +182,7 @@ jobs:
           # Six LibriSpeech test-clean clips (CC BY 4.0) with a clips.json of their reference text.
           $speechArchive = Join-Path $fixture 'long-speech.zip'
           Invoke-WebRequest `
-            -Uri 'https://github.com/cppalliance/runvil/releases/download/stt-long-speech-1/stt-long-speech-1.zip' `
+            -Uri "https://github.com/$env:GITHUB_REPOSITORY/releases/download/stt-long-speech-1/stt-long-speech-1.zip" `
             -OutFile $speechArchive
           $speechHash = (Get-FileHash $speechArchive -Algorithm SHA256).Hash
           if ($speechHash -ne 'C8BB0618630D5FA76026F2B6CEC5EC3A0227DC12F710FB0BF01D12FDF1ED3FC7') {

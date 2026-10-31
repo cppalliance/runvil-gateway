@@ -27,23 +27,44 @@ env:
   WHISPER_TAG: ${{ inputs.whisper_tag || 'b4938' }}
 
 jobs:
+  # The CUDA archive is built on a self-hosted runner that is not registered
+  # on this repository yet. A matrix row naming a runner that does not exist
+  # queues forever and never reports, which is worse than failing, so the row
+  # is left out until the RUNVIL_CUDA_RUNNER repository variable is true.
+  # The other five platforms build on GitHub-hosted runners regardless.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build the platform matrix
+        id: matrix
+        shell: bash
+        env:
+          CUDA_RUNNER: ${{ vars.RUNVIL_CUDA_RUNNER }}
+        run: |
+          set -euo pipefail
+          rows=()
+          rows+=('{"platform":"windows-x86_64","runs-on":"windows-2022"}')
+          rows+=('{"platform":"macos-aarch64-metal","runs-on":"macos-latest"}')
+          rows+=('{"platform":"macos-x86_64","runs-on":"macos-15-intel"}')
+          rows+=('{"platform":"linux-x86_64","runs-on":"ubuntu-22.04"}')
+          rows+=('{"platform":"linux-aarch64","runs-on":"ubuntu-22.04-arm"}')
+          if [ "$CUDA_RUNNER" = "true" ]; then
+            rows+=('{"platform":"windows-x86_64-cuda","runs-on":["self-hosted","windows","cuda"]}')
+          else
+            echo "windows-x86_64-cuda is skipped: no runner with the self-hosted, windows, and cuda labels is registered on $GITHUB_REPOSITORY (the RUNVIL_CUDA_RUNNER repository variable is not set to true)"
+            echo "::notice title=whisper-lib skips windows-x86_64-cuda::register a self-hosted runner with the self-hosted, windows, and cuda labels, then set the RUNVIL_CUDA_RUNNER repository variable to true"
+          fi
+          joined="$(IFS=,; echo "${rows[*]}")"
+          echo "matrix={\"include\":[$joined]}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x86_64-cuda
-            runs-on: [self-hosted, windows, cuda]
-          - platform: windows-x86_64
-            runs-on: windows-2022
-          - platform: macos-aarch64-metal
-            runs-on: macos-latest
-          - platform: macos-x86_64
-            runs-on: macos-15-intel
-          - platform: linux-x86_64
-            runs-on: ubuntu-22.04
-          - platform: linux-aarch64
-            runs-on: ubuntu-22.04-arm
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 150
     steps:
@@ -283,7 +304,7 @@ jobs:
             -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
             '-DCMAKE_INSTALL_RPATH=$ORIGIN'
 
-      # A bare --parallel runs make -j with no limit, which starts every nvcc
+      # A bare parallel build runs make -j with no limit, which starts every nvcc
       # compile at once and can exhaust the runner's memory.
       - name: Build and install
         run: cmake --build build --config Release --parallel "$(nproc)"
@@ -376,7 +397,12 @@ jobs:
 
   publish:
     needs: [build, build-linux-cuda]
-    if: github.event_name == 'workflow_dispatch'
+    # A release must carry the whole platform set, and the runtime rows in
+    # crates/gateway/local/src/artifacts pin an archive per platform. With the
+    # CUDA runner off, `build` has no windows-x86_64-cuda row, so publishing
+    # here would ship a set that is quietly short one archive. Gate on the
+    # variable rather than publish an incomplete release.
+    if: github.event_name == 'workflow_dispatch' && vars.RUNVIL_CUDA_RUNNER == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

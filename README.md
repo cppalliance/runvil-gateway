@@ -1,40 +1,80 @@
+[![License](https://img.shields.io/static/v1?label=license&message=BSL-1.0&color=blue)](LICENSE)
+[![CI](https://img.shields.io/static/v1?label=CI&message=GitHub%20Actions&color=blue)](https://github.com/cppalliance/runvil-gateway/actions)
+[![Rust](https://img.shields.io/static/v1?label=rust&message=1.99&color=blue)](rust-toolchain.toml)
+
 # Runvil Gateway
 
-The gateway is the server process that holds every model credential. It serves an OpenAI-compatible HTTP and WebSocket API, routes each request to a cloud provider or a local model, manages the model catalog and local model downloads, and, when built with them, serves web search and speech, plus a browser settings page. It starts serving before any slow model work begins, and on desktop machines it runs from the system tray.
+One server that speaks the API other programs already call, and runs the models itself.
 
-## The API
+Runvil Gateway is one process that serves an OpenAI-shaped API for chat, embeddings, reranking, speech, and live transcription, and answers each request from a model on your own machine or from a cloud provider you configured. Because the routes follow standards existing clients already speak, an existing OpenAI client points at the Gateway and works, with no adapter and no second client library. Where a feature needs something a standard lacks, the Gateway adds the smallest opt-in extension that makes it possible, and leaves the standard path untouched for clients that do not ask. The full rule is in [`crates/gateway/README.md`](crates/gateway/README.md).
 
-Every route follows the industry standard it is modeled on where one exists, so a program written against that standard works against the gateway without a special case. Where the gateway needs something a standard lacks, the wire shape is the standard plus the smallest addition that makes the feature possible, named as an extension, documented beside the shape it extends, and opt-in wherever the protocol offers a way to ask. A client never relies on an extension it has not asked for.
+## Why it exists
 
-`crates/gateway/README.md` states the principle in full, including the extension it depends on most and the fallback rule.
+- One API in front of both your own models and cloud ones. You change a model name in a request, not the client code or the URL.
+- The same shape other tools already speak. Chat, embeddings, and models follow OpenAI's API, rerank follows the shape Jina and Cohere publish, and the realtime stream follows OpenAI's transcription protocol.
+- Live transcription that revises itself. The realtime route can send hypothesis snapshots as it re-listens, behind an opt-in token, so a client never has to guess.
+- A settings page in the browser, so a running Gateway can be configured without editing TOML by hand.
 
-## Building
+## What it serves
 
-The config UI is bundled by esbuild, so one `npm ci` per checkout comes first:
+| Route | Standard it follows |
+|---|---|
+| `POST /v1/chat/completions` | OpenAI chat completions, including streaming |
+| `POST /v1/embeddings` | OpenAI embeddings |
+| `GET /v1/models` | OpenAI model listing |
+| `POST /v1/audio/speech` | OpenAI speech synthesis |
+| `POST /v1/audio/transcriptions` | OpenAI audio transcriptions |
+| `GET /v1/realtime` with `intent=transcription` | OpenAI Realtime transcription protocol, over a WebSocket |
+| `POST /v1/rerank` | The Jina and Cohere rerank shape, which vLLM also serves |
+| `POST /v1/tools/web_search` | A Gateway extension, backed by Brave Search |
+| `GET /v1/audio/voices` | A Gateway extension, the voice catalog |
+| `/v1/cache` | A Gateway extension, a local blob cache that downloads and keeps files by sha256 |
+| `/config/`, `/admin/*`, `/health` | The Gateway's own settings page, admin surface, and liveness probe |
+
+Requests are answered by a local model through a managed `llama-server` child, or forwarded to a cloud provider you configured. Chat, embeddings, and reranking work either way. Transcription runs on the Gateway's own speech pipeline, which decodes with whisper.cpp, and speech synthesis forwards to a speech endpoint you configure.
+
+Every route except `/health` is authenticated by default. A loopback caller is trusted without a key unless you turn that off with `trust_loopback`, and the admin routes that read secrets or launch processes are reachable only from the same machine.
+
+## Install
+
+There are no published releases yet, so there is nothing to download or install from a URL today. Build from source instead.
+
+You need Rust, and Node.js 22 for the settings page bundle. The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) and rustup installs it on the first cargo call.
 
 ```sh
-(cd crates/gateway/config-ui/ui && npm ci)
-cargo build
-cargo build --no-default-features
+git clone https://github.com/cppalliance/runvil-gateway
+cd runvil-gateway
+npm ci --prefix crates/gateway/config-ui/ui
+cargo build --release
 ```
 
-`cargo build` builds the gateway alone, because the workspace's `default-members` names it. Node.js 22 is required for a default build. `--no-default-features` drops the config UI, local models, web search, and speech, so it needs no Node and no npm install.
+`cargo build` builds the Gateway on its own, because the workspace's default members name it. The binary lands at `target/release/runvil-gateway`, or `target/release/runvil-gateway.exe` on Windows.
 
-## Testing
+The `npm ci` step is only needed because the settings page is compiled into the binary. A build without it drops the settings page, local models, web search, and speech:
 
 ```sh
-cargo nextest run --workspace --all-features
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+cargo build --release --no-default-features
 ```
 
-`cargo test -p build-xtask` runs the architecture checks: lint inheritance, the build-script file-size ceiling, the unsafe allowlist, the doctest ban, the `Debug` spelling rule, and the walled admin tier. `cargo xtask tidy` prints the same report on demand.
+To run it, either point it at a config you already have, or let it write one on first launch:
 
-## Releases
+```sh
+cargo run --release -- --print-url
+```
 
-`dist-workspace.toml` drives cargo-dist releases for five targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, and `x86_64-apple-darwin`. A `gateway-v*` tag starts a release.
+With no config anywhere, the Gateway generates one in `~/.runvil/gateway.toml`, binds loopback on a free port, and prints the settings URL, which carries the generated bearer key. If you already have a config, `--config PATH` names it instead. Everything else lives in that file, and the settings page edits it without you opening it: profiles, model endpoints, GPU pools, and the speech models.
+
+On a desktop it stays in the system tray, and the tray opens the settings page. `--print-url` serves headless and prints the URL, which suits a server or CI. `runvil-gateway diagnostics` prints a JSON report of the state directory, config, logs, and discovery file without serving.
+
+## Documentation
+
+The Gateway guide, covering installation, configuration, profiles, local models, speech, and the settings page, lives in the main Runvil documentation at [runvil.org](https://runvil.org).
+
+## Related projects
+
+- [Runvil](https://github.com/cppalliance/runvil) is the product family this Gateway belongs to. It holds the desktop Workshop app and the prompt engine that talk to a Gateway.
+- [runvil.org](https://runvil.org) is the website and the documentation.
 
 ## License
 
-Boost Software License 1.0. See `LICENSE`.
+Runvil Gateway is distributed under the [Boost Software License 1.0](LICENSE), copyright The C++ Alliance, Inc.
