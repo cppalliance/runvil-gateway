@@ -1,0 +1,471 @@
+{
+  "$defs": {
+    "Deprecation": {
+      "description": "Sunset information, when the provider reports it.",
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The sunset date, when known. Absent reads as `None`, so the field is\nnot required; the writer still emits the key."
+        },
+        "replacement": {
+          "description": "The successor model id, when named.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "Provider's own lifecycle label, e.g. \"LEGACY\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "EnvRole": {
+      "description": "How a provider uses an environment variable.",
+      "oneOf": [
+        {
+          "const": "key",
+          "description": "A credential: the variable holds API key material.",
+          "type": "string"
+        },
+        {
+          "const": "config",
+          "description": "Configuration: the variable selects a region, endpoint, or similar.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnvVar": {
+      "description": "One environment variable a provider reads.",
+      "properties": {
+        "default": {
+          "description": "The value the provider assumes when the variable is unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The variable name, e.g. \"ANTHROPIC_API_KEY\".",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/EnvRole",
+          "description": "How the variable is used."
+        }
+      },
+      "required": [
+        "name",
+        "role"
+      ],
+      "type": "object"
+    },
+    "ModelEntry": {
+      "description": "One normalized model entry. Future additive fields are marked\n`#[serde(default)]`; the schema version bump is reserved for removals\nand renames.",
+      "properties": {
+        "audio_input": {
+          "description": "Accepts audio input.",
+          "type": "boolean"
+        },
+        "batch": {
+          "description": "Supports batch submission.",
+          "type": "boolean"
+        },
+        "citations": {
+          "description": "Returns grounded citations.",
+          "type": "boolean"
+        },
+        "code_execution": {
+          "description": "Can execute code server-side.",
+          "type": "boolean"
+        },
+        "context_window": {
+          "description": "Optional: the IDs-only providers omit it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "default_effort": {
+          "description": "The provider's own default level name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deprecation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Deprecation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sunset information, when the provider reports it."
+        },
+        "display_name": {
+          "description": "UI-facing name.",
+          "type": "string"
+        },
+        "effort_levels": {
+          "description": "The provider's own level names, e.g. `[\"low\", \"high\", \"max\"]`;\nnever mapped to a cross-provider scale.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "family": {
+          "description": "The UI's first grouping level, e.g. \"claude-opus\", \"gpt-5.4\".",
+          "type": "string"
+        },
+        "id": {
+          "description": "The upstream slug.",
+          "type": "string"
+        },
+        "images": {
+          "description": "Accepts image input.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/ModelKind",
+          "default": "chat",
+          "description": "The workload: chat, embedding, classifier, speech (TTS),\ntranscription (STT), image, video."
+        },
+        "languages": {
+          "description": "The provider's own language codes, passed through as reported;\nempty when unknown or not applicable.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_output": {
+          "description": "Optional maximum completion tokens.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pdf_input": {
+          "description": "Accepts PDF input.",
+          "type": "boolean"
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pricing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Normalized to per-million-token units."
+        },
+        "released_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: not every provider reports it. Absent reads as `None`, so\nthe field is not required; the writer still emits the key."
+        },
+        "structured_outputs": {
+          "description": "Honors response schemas.",
+          "type": "boolean"
+        },
+        "thinking": {
+          "$ref": "#/$defs/Thinking",
+          "description": "Reasoning capability."
+        },
+        "tool_calling": {
+          "description": "Emits tool calls.",
+          "type": "boolean"
+        },
+        "variant": {
+          "description": "The stripped suffix, e.g. `2026-03-05`, `free`, `batch`, for the\nUI's expander label.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant_of": {
+          "description": "The canonical alias this entry is a dated snapshot or SKU variant\nof; set only when that alias exists in the same provider's list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "video_input": {
+          "description": "Accepts video input.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "display_name",
+        "family",
+        "languages",
+        "images",
+        "pdf_input",
+        "video_input",
+        "audio_input",
+        "batch",
+        "citations",
+        "code_execution",
+        "structured_outputs",
+        "tool_calling",
+        "thinking",
+        "effort_levels"
+      ],
+      "type": "object"
+    },
+    "ModelKind": {
+      "description": "The workload a model serves: chat completions, embeddings,\nclassification, speech synthesis, transcription, or image or video\ngeneration.\n\nThe kind scopes which configuration fields are meaningful: chat-only\nfields (for example `thinking`, `default_max_tokens`,\n`chat_template_file`) are rejected for non-chat kinds at validation,\nwhile `context` applies to every kind. The catalog includes the kind so\nclients can filter before building a request.",
+      "oneOf": [
+        {
+          "const": "chat",
+          "description": "Chat completions (`POST /v1/chat/completions`). The default.",
+          "type": "string"
+        },
+        {
+          "const": "embedding",
+          "description": "Text embeddings.",
+          "type": "string"
+        },
+        {
+          "const": "classifier",
+          "description": "Classification / reranking.",
+          "type": "string"
+        },
+        {
+          "const": "speech",
+          "description": "Speech synthesis (`POST /v1/audio/speech`).",
+          "type": "string"
+        },
+        {
+          "const": "transcription",
+          "description": "Speech-to-text transcription.",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "Image generation.",
+          "type": "string"
+        },
+        {
+          "const": "video",
+          "description": "Video generation.",
+          "type": "string"
+        }
+      ]
+    },
+    "Pricing": {
+      "description": "Token pricing, normalized to per-million-token units.",
+      "properties": {
+        "completion_per_mtok": {
+          "description": "Completion price per million tokens.",
+          "format": "double",
+          "type": "number"
+        },
+        "currency": {
+          "description": "ISO 4217, e.g. \"USD\", \"CNY\".",
+          "type": "string"
+        },
+        "prompt_per_mtok": {
+          "description": "Prompt price per million tokens.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "currency",
+        "prompt_per_mtok",
+        "completion_per_mtok"
+      ],
+      "type": "object"
+    },
+    "ProviderSlice": {
+      "description": "One provider's slice of the sheet. Self-describing: the descriptor's\npublic fields are copied in at build time so consumers can render a\nprovider dropdown from the sheet alone. Future additive fields are\nmarked `#[serde(default)]`; the schema version bump is reserved for\nremovals and renames.",
+      "properties": {
+        "display_name": {
+          "description": "UI-facing name, e.g. \"Anthropic\".",
+          "type": "string"
+        },
+        "env_vars": {
+          "description": "The provider's environment variables, copied from the descriptor\nat build time so a consumer can render from the sheet alone.",
+          "items": {
+            "$ref": "#/$defs/EnvVar"
+          },
+          "type": "array"
+        },
+        "fetched_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Last fresh fetch; absent for `static` slices."
+        },
+        "models": {
+          "description": "The provider's normalized model entries.",
+          "items": {
+            "$ref": "#/$defs/ModelEntry"
+          },
+          "type": "array"
+        },
+        "openai_base_url": {
+          "description": "The base URL of the provider's OpenAI-compatible chat API - the\nvalue an `[[endpoint]]` needs - or `None` when the provider has\nno such API.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/SliceStatus",
+          "description": "Freshness of this slice."
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier",
+          "description": "The provider's tier, a curated product opinion."
+        }
+      },
+      "required": [
+        "display_name",
+        "tier",
+        "status",
+        "fetched_at",
+        "env_vars",
+        "models"
+      ],
+      "type": "object"
+    },
+    "SliceStatus": {
+      "description": "Freshness of one provider's slice.",
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "Fetched fresh this run.",
+          "type": "string"
+        },
+        {
+          "const": "stale",
+          "description": "Copied verbatim from the previous sheet after a failed fetch.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "No previous slice and the fetch failed; `models` is empty.",
+          "type": "string"
+        },
+        {
+          "const": "static",
+          "description": "Curated by hand; never fetched.",
+          "type": "string"
+        }
+      ]
+    },
+    "Thinking": {
+      "description": "Reasoning capability.",
+      "properties": {
+        "adaptive": {
+          "description": "Model-chosen thinking depth.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Manual budget mode (Anthropic \"enabled\").",
+          "type": "boolean"
+        },
+        "supported": {
+          "description": "Any reasoning capability at all.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported",
+        "enabled",
+        "adaptive"
+      ],
+      "type": "object"
+    },
+    "Tier": {
+      "description": "Curated product opinion, not a vendor fact.",
+      "oneOf": [
+        {
+          "const": "prime",
+          "description": "The frontier providers.",
+          "type": "string"
+        },
+        {
+          "const": "subprime",
+          "description": "Credible challengers.",
+          "type": "string"
+        },
+        {
+          "const": "niche",
+          "description": "Specialized or regional providers.",
+          "type": "string"
+        },
+        {
+          "const": "aggregator",
+          "description": "Resellers of other providers' models.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "description": "The sheet envelope: one atomic snapshot of every provider's models.\nFuture additive fields are marked `#[serde(default)]` so a lagging\nreader survives them; `schema_version` bumps only on removals and\nrenames.",
+  "properties": {
+    "generated_at": {
+      "description": "RFC 3339; always this run's time.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "providers": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderSlice"
+      },
+      "description": "Keyed by provider name, e.g. \"anthropic\".",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Bumped on breaking change. Stays 1: additive fields are marked\n`#[serde(default)]`; the bump is reserved for removals and renames.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "generated_at",
+    "providers"
+  ],
+  "title": "Sheet",
+  "type": "object"
+}

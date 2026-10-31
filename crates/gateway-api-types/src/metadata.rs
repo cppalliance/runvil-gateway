@@ -7,6 +7,7 @@
 
 use std::fmt;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// How a model exposes chain-of-thought / thinking tokens to callers.
@@ -37,7 +38,7 @@ pub enum ThinkingMode {
 /// `chat_template_file`) are rejected for non-chat kinds at validation,
 /// while `context` applies to every kind. The catalog includes the kind so
 /// clients can filter before building a request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum ModelKind {

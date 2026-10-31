@@ -131,6 +131,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "que
 # embeds it into the binary in release builds. interpolate-folder-path
 # resolves the $OUT_DIR prefix in the `folder` attribute.
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+# Derives the committed JSON Schema of the model sheet from the serde types.
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip` makes `from_str` reproduce the exact `f64` that
 # `to_string` printed, so a payload the gateway stores reads back bit-for-bit.
