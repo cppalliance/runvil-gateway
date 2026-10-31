@@ -416,7 +416,10 @@ jobs:
 
       # Released gateways pin each archive's sha256 and a rebuilt archive
       # differs byte for byte, so a republish adds only the archives the
-      # release lacks and replaces SHA256SUMS after they land. It refuses a
+      # release lacks and replaces SHA256SUMS after they land. An archive
+      # already on the release is compared with the local file: equal bytes
+      # are left alone, and different bytes stop the job, because replacing
+      # the asset would break every gateway pinned to it. It also refuses a
       # release whose archives and SHA256SUMS disagree, as a failed upload
       # leaves one. The script reads only GH_TOKEN, GITHUB_REPOSITORY,
       # WHISPER_TAG, and dist/, so it runs unchanged outside Actions.
@@ -442,7 +445,8 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           sums="$work/SHA256SUMS"
 
-          if ! held="$(gh release view "$release" --json assets --jq '.assets[].name' 2>"$work/view.err")"; then
+          if ! assets="$(gh release view "$release" --json assets \
+            --jq '.assets[] | "\(.name)\t\(.digest // "")"' 2>"$work/view.err")"; then
             if ! grep -qx 'release not found' "$work/view.err"; then
               cat "$work/view.err" >&2
               exit 1
@@ -453,6 +457,10 @@ jobs:
             echo "published $release with ${#archives[@]} archives"
             exit 0
           fi
+          held="$(awk -F'\t' 'NF { print $1 }' <<<"$assets")"
+          digest_of() {
+            awk -F'\t' -v name="$1" '$1 == name { print $2; exit }' <<<"$assets"
+          }
 
           if grep -qx SHA256SUMS <<<"$held"; then
             gh release download "$release" --pattern SHA256SUMS --dir "$work"
@@ -470,7 +478,24 @@ jobs:
           fi
           new=()
           for name in "${archives[@]}"; do
-            grep -qxF "$name" <<<"$on_release" || new+=("$name")
+            if ! grep -qxF "$name" <<<"$held"; then
+              new+=("$name")
+              continue
+            fi
+            have="$(digest_of "$name")"
+            want="sha256:$(sha256sum "dist/$name" | cut -d' ' -f1)"
+            if [[ -z "$have" ]]; then
+              echo "$release holds $name but reports no digest, and dist/$name has digest $want." \
+                "The release asset cannot be compared with this build, so the upload stops instead of replacing it." >&2
+              exit 1
+            fi
+            if [[ "$have" == "$want" ]]; then
+              echo "$release already holds $name with $want; it stays as it is"
+            else
+              echo "$release holds $name with digest $have, but dist/$name has digest $want." \
+                "The release asset differs from this build, so the upload stops instead of replacing it." >&2
+              exit 1
+            fi
           done
           if ((${#new[@]} == 0)); then
             echo "$release already holds every archive in dist/; nothing uploaded"

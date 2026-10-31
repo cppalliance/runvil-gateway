@@ -152,12 +152,74 @@ jobs:
         working-directory: dist
         run: cp llama-server-cuda-blackwell-*.zip.sha256 SHA256SUMS
 
+      # A published asset is pinned by a sha256 in the gateway, so an upload
+      # that replaces one with different bytes breaks every gateway that
+      # already points at it. Read the release's own digests first: an asset
+      # that already matches is left alone, an asset that differs stops the
+      # job, and only an asset the release lacks gets uploaded.
+      - name: Check the release for conflicting assets
+        id: assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export GH_REPO="$GITHUB_REPOSITORY" LC_ALL=C
+          release="llama-cuda-blackwell-$TAG"
+          shopt -s nullglob
+          local_files=(dist/*.zip dist/SHA256SUMS dist/llama-cuda-manifest.json)
+          if ((${#local_files[@]} == 0)); then
+            echo "dist/ holds no file to publish" >&2
+            exit 1
+          fi
+          view_err="$RUNNER_TEMP/release-view.err"
+          if ! assets="$(gh release view "$release" --json assets \
+            --jq '.assets[] | "\(.name)\t\(.digest // "")"' 2>"$view_err")"; then
+            if ! grep -q 'release not found' "$view_err"; then
+              cat "$view_err" >&2
+              exit 1
+            fi
+            assets=""
+          fi
+          upload=()
+          for path in "${local_files[@]}"; do
+            if [[ ! -f "$path" ]]; then
+              echo "the build did not produce $path" >&2
+              exit 1
+            fi
+            name="${path##*/}"
+            want="sha256:$(sha256sum "$path" | cut -d' ' -f1)"
+            have="$(awk -F'\t' -v name="$name" '$1 == name { print $2; exit }' <<<"$assets")"
+            present="$(awk -F'\t' -v name="$name" '$1 == name { print "yes"; exit }' <<<"$assets")"
+            if [[ -z "$present" ]]; then
+              upload+=("$path")
+            elif [[ -z "$have" ]]; then
+              echo "$release holds $name but reports no digest, and $path has digest $want." \
+                "The release asset cannot be compared with this build, so the upload stops instead of replacing it." >&2
+              exit 1
+            elif [[ "$have" == "$want" ]]; then
+              echo "$release already holds $name with $want; it stays as it is"
+            else
+              echo "$release holds $name with digest $have, but $path has digest $want." \
+                "The release asset differs from this build, so the upload stops instead of replacing it." >&2
+              exit 1
+            fi
+          done
+          if ((${#upload[@]} == 0)); then
+            echo "$release already holds every asset of this build; nothing to upload"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "files<<RUNVIL_ASSETS"
+            printf '%s\n' "${upload[@]}"
+            echo "RUNVIL_ASSETS"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish the release
+        if: steps.assets.outputs.files != ''
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: llama-cuda-blackwell-${{ env.TAG }}
           name: llama-cuda-blackwell-${{ env.TAG }}
-          files: |
-            dist/*.zip
-            dist/SHA256SUMS
-            dist/llama-cuda-manifest.json
+          files: ${{ steps.assets.outputs.files }}
