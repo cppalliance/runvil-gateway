@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::product::test_support::workspace_root;
+use crate::workspace::workspace_root;
 
 /// Writes a crate at `crates/<dir>/` holding each `(path, text)` under its
 /// `src/`.
@@ -45,10 +45,6 @@ fn the_owned_crates_may_relax_unsafe_code_and_text_that_spells_it_passes() {
         "gateway/app",
         "gateway/stt/whisper-ffi",
         "gateway-api-discovery",
-        "workshop/desktop",
-        "workshop/gateway-discovery",
-        "harness-internal/plugin-loader",
-        "harness-internal/test-plugin",
     ] {
         write_crate(root.path(), dir, &[("lib.rs", RELAXES)]);
     }

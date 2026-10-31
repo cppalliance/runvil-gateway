@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::product::test_support::workspace_root;
+use crate::workspace::workspace_root;
 
 /// The trait's bare name, as a group import lists it, kept out of this
 /// file's own group imports so no line here lists it in one.

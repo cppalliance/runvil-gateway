@@ -1,0 +1,227 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "crates/gateway/app", "crates/gateway/cloud-providers", "crates/gateway/config", "crates/gateway/config-ui", "crates/gateway/local", "crates/gateway/logging", "crates/gateway/progress", "crates/gateway/protocol", "crates/gateway/routing", "crates/gateway/web-search", "crates/gateway/stt/api", "crates/gateway/stt/engine", "crates/gateway/stt/backend-whisper", "crates/gateway/stt/whisper-ffi"]
+# crates/shared-ui is not a Rust crate: it is the TypeScript and CSS package
+# the config UI consumes, so the crates/* glob skips it.
+# crates/gateway and crates/gateway/stt are manifestless containers holding
+# the gateway's private crates. Cargo prunes excluded subtrees from member
+# globs, so a "crates/gateway/*" glob beside the excludes below would match
+# nothing; the container crates are enumerated explicitly instead.
+exclude = ["crates/shared-ui", "crates/gateway", "crates/gateway/stt"]
+# A plain `cargo build` builds the product: the gateway server.
+default-members = ["crates/gateway/app"]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2024"
+# The oldest toolchain the workspace is written against. `rust-toolchain.toml`
+# pins the channel every build and test uses, which is later than this floor.
+rust-version = "1.95"
+license = "BSL-1.0"
+repository = "https://github.com/cppalliance/runvil-gateway"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["multipart", "ws"] }
+base64 = "0.22"
+block2 = "0.6"
+build-ceiling = { path = "crates/build-ceiling" }
+bytes = "1"
+clap = { version = "4.6", features = ["derive"] }
+dotenvy = "0.15"
+# Compiles the gateway exe's Windows icon resource in its build script;
+# already in the tree through the Windows system crates.
+embed-resource = "3"
+flate2 = "1"
+futures-util = "0.3"
+gateway-api-discovery = { path = "crates/gateway-api-discovery" }
+gateway-api-types = { path = "crates/gateway-api-types" }
+gateway-config = { path = "crates/gateway/config" }
+gateway-config-ui = { path = "crates/gateway/config-ui" }
+gateway-local = { path = "crates/gateway/local" }
+gateway-logging = { path = "crates/gateway/logging" }
+gateway-progress = { path = "crates/gateway/progress" }
+gateway-protocol = { path = "crates/gateway/protocol" }
+gateway-routing = { path = "crates/gateway/routing" }
+gateway-stt = { path = "crates/gateway/stt/api" }
+gateway-stt-backend-whisper = { path = "crates/gateway/stt/backend-whisper" }
+gateway-stt-engine = { path = "crates/gateway/stt/engine" }
+gateway-web-search = { path = "crates/gateway/web-search" }
+gateway-whisper-ffi = { path = "crates/gateway/stt/whisper-ffi" }
+hmac = "0.13"
+# WAV parsing for STT uploads and transcription test fixtures.
+hound = "3.5"
+# The Linux tray backend: a pure StatusNotifierItem over D-Bus, no GTK.
+# default-features off drops ksni's tokio feature; async-io runs the service
+# on ksni's own executor thread, so the tray never depends on which runtime
+# polls it (the tokio feature's runtime coupling is the documented panic
+# class). 0.3.6 is the floor for assume_sni_available and watcher
+# re-registration.
+ksni = { version = "0.3.6", default-features = false, features = ["async-io"] }
+# Thin process-image shims for gateway-api-discovery's stale detection; both are
+# already in the tree transitively.
+libc = "0.2"
+# Loads the packaged whisper.cpp runtime without linking it into Cargo builds.
+libloading = "0.8"
+# Test-only Jinja2 compatibility oracle for bundled chat templates. Members
+# inherit these only from their dev-dependency tables.
+minijinja = { version = "2.24", default-features = false, features = [
+    "builtins",
+    "debug",
+    "deserialization",
+    "macros",
+    "multi_template",
+    "preserve_order",
+    "serde",
+    "std_collections",
+] }
+minijinja-contrib = { version = "2.24", default-features = false, features = ["pycompat"] }
+# GPU name and VRAM for `GET /admin/system`. Loads NVML dynamically at
+# runtime via libloading, so machines without an NVIDIA driver degrade to an
+# absent GPU field rather than a link failure.
+nvml-wrapper = "0.12"
+# The macOS tray backend: the NSApplication run loop owns the main thread and
+# SMAppService backs Launch at Login. objc2 is the maintained successor to the
+# objc crate family; the framework crates are feature-gated per class so the
+# build links only what the backend uses.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    # setActivationPolicy and NSApplicationActivationPolicy live behind the
+    # NSRunningApplication feature (they are declared in its header).
+    "NSRunningApplication",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSTimer",
+    # The block-based NSTimer initializer is gated on NSDate + block2.
+    "NSDate",
+    "block2",
+    # NSProcessInfo.operatingSystemVersion gates SMAppService to macOS 13+.
+    "NSProcessInfo",
+] }
+objc2-service-management = { version = "0.3", default-features = false, features = [
+    "std",
+    # The SMAppService class binding is a per-class feature.
+    "SMAppService",
+    "objc2",
+    "objc2-foundation",
+] }
+# Opens a URL in the system browser for the windowless server frame.
+open = "5"
+# Encodes PNG fixtures in the gateway's integration tests.
+png = "0.18"
+# `span-locations` makes a span parsed outside a proc macro report its line,
+# which build-xtask's architecture checks print with every violation.
+proc-macro2 = { version = "1", features = ["span-locations"] }
+# default-features off: the doctest scan reads only the core event stream,
+# never the `html` renderer or the `getopts` binary.
+pulldown-cmark = { version = "0.12", default-features = false }
+rand = "0.9"
+# 0.13 rather than 0.12 so the tree links exactly one rustls crypto backend:
+# aws-lc-rs, the default. 0.13 has no `ring` option, so a bump cannot
+# re-enable it. Root certificates come from the OS trust store through the
+# platform verifier (the `rustls` feature's default), not from a bundled
+# Mozilla list. `query` became opt-in in 0.13.
+# `system-proxy` keeps the gateway honoring Windows registry and macOS proxies.
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "stream", "system-proxy"] }
+# Serves the config UI: reads $OUT_DIR/ui-dist from disk in debug builds,
+# embeds it into the binary in release builds. interpolate-folder-path
+# resolves the $OUT_DIR prefix in the `folder` attribute.
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+serde = { version = "1", features = ["derive"] }
+# `float_roundtrip` makes `from_str` reproduce the exact `f64` that
+# `to_string` printed, so a payload the gateway stores reads back bit-for-bit.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.11"
+shared-error-source = { path = "crates/shared-error-source" }
+shared-loopback = { path = "crates/shared-loopback" }
+subtle = "2.6"
+# Parses manifests for build-xtask's structural checks; `full` is the feature
+# that parses items and `use` trees.
+syn = { version = "3", features = ["full"] }
+# Machine metrics for `GET /admin/system`. default-features off keeps only the
+# CPU/RAM (`system`) and disk probes; the component, network, and user
+# probes and the rayon-backed `multithread` refresh are never used.
+sysinfo = { version = "0.38", default-features = false, features = ["system", "disk"] }
+tar = { version = "0.4.46", default-features = false }
+tempfile = "3"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
+# 0.29 rather than the newer 0.30 so the resolver unifies with the copy axum's
+# `ws` feature already pulls in, instead of compiling two.
+tokio-tungstenite = "0.29"
+# default-features off: the `sync` module (CancellationToken) is ungated in
+# tokio-util 0.7, so no features are required for it.
+tokio-util = { version = "0.7", default-features = false }
+# 1.x rather than 0.8 so the resolver unifies with the copy already in the
+# tree, instead of compiling two toml lines (and the 0.8 line's exclusive
+# toml_edit 0.19 and winnow 0.5 tail).
+toml = "1"
+tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# The gateway's system tray on Windows and macOS.
+# 0.24.1+ is required: it re-registers the icon on TaskbarCreated and keeps
+# a hidden icon hidden across Explorer restarts.
+tray-icon = "0.24.1"
+# Exact pin: turso is pre-1.0 and backs user-visible files, so upgrades are
+# deliberate, reviewed changes rather than resolver drift. It is an optional
+# dependency of `shared-error-source` only, behind that crate's `database`
+# feature, which no crate in this workspace enables.
+# default-features off: the `mimalloc` default installs a
+# `#[global_allocator]` from inside the library (process-global state and a
+# C build in a serve path), and `fts` is unused.
+turso = { version = "=0.7.2", default-features = false }
+url = "2"
+windows-sys = { version = "0.61", default-features = false }
+# The session-bus probes beside ksni (watcher presence, the first-run
+# notification); the same zbus major ksni builds on, on the same async-io
+# executor model.
+zbus = { version = "5", default-features = false, features = ["async-io"] }
+zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+future_incompatible = { level = "warn", priority = -1 }
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+unescaped_backticks = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "warn"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+exit = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+disallowed_macros = "deny"
+# Cherry-picked out of pedantic: it flags product names (OpenAI, Brave) in
+# prose, which reads worse backticked than the lint is worth.
+doc_markdown = "allow"
+# Cherry-picked out of pedantic: its suggested rewrite for a collection is
+# `assert_eq!(x, [] as [T; 0])`, which has to spell out the element type and
+# needs `T: PartialEq + Debug`, so it cannot be applied to most call sites.
+assert_is_empty = "allow"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

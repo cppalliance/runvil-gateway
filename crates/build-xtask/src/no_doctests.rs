@@ -49,11 +49,10 @@ struct Found {
 /// be shown clean.
 #[must_use]
 pub(crate) fn no_doctests_violations(root: &Path) -> Vec<String> {
-    let walk = crate::product::workspace_crates(root);
+    let walk = crate::workspace::crates(root);
     let mut files: Vec<PathBuf> = walk
         .crates
         .iter()
-        .map(|krate| &krate.dir)
         .chain(&walk.unread)
         .flat_map(|dir| crate::tidy::rust_files(&root.join(dir)))
         .collect();

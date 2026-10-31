@@ -1,6 +1,5 @@
 [workspace]
-# Only the gateway is released through cargo-dist (Linux installers); the
-# workshop desktop app has its own workflow (release-workshop.yml).
+# The gateway is the only release artifact in this repository.
 members = ["cargo:crates/gateway/app"]
 
 # Config for 'dist'
@@ -11,15 +10,21 @@ cargo-dist-version = "0.32.0"
 ci = "github"
 # The installers to generate for each app
 installers = ["shell"]
-# Target platforms to build apps for (Rust target-triple syntax): Linux
-# only, Intel/AMD and ARM 64-bit. Windows and macOS users get the gateway
-# inside the workshop installer.
-targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+# Target platforms to build apps for (Rust target-triple syntax): the five
+# triples the project ships. The gateway build cross-compiles nothing; each
+# triple builds natively (see the custom runners below).
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
 # Where to publish releases
 hosting = "github"
 # Only gateway-v* tags start a release.
 tag-namespace = "gateway-v"
-# The gateway build compiles the two web UIs with esbuild, so the build
+# The gateway build compiles the config UI with esbuild, so the build
 # machines need Node 22 and the npm installs first.
 github-build-setup = "dist-ci/build-setup.yml"
 # Validate the release plan on pull requests without building anything.
@@ -39,7 +44,7 @@ github-release = "announce"
 # hand-edit adding `needs.custom-gateway-release-test.result == 'success'`
 # to the announce condition. Re-apply it after every `cargo dist generate`.
 
-# Build aarch64 on a native ARM runner: the gateway compiles C dependencies
-# (vendored Lua, onig, ring), which cross-compilers mishandle.
+# Build each Linux architecture on a native runner: the gateway compiles C
+# dependencies, which cross-compilers mishandle.
 [dist.github-custom-runners]
 aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"

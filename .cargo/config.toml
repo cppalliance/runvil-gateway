@@ -1,0 +1,16 @@
+# Link the Windows Rust binary and cc-built support crates with the static
+# CRT. Runtime-loaded native libraries keep their own CRT boundary.
+# rust-lld ships in the toolchain and links several times faster than the
+# stock MSVC linker; it resolves from the rustlib bin directory by name.
+# The shipped Gateway binary depends on both settings.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[alias]
+xtask = "run -p build-xtask --"
+
+# Clippy appends a docs-link line to every diagnostic; the lint name already
+# identifies it.
+[env]
+CLIPPY_DISABLE_DOCS_LINKS = "1"

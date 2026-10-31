@@ -1,0 +1,13 @@
+/target
+/target-msrv/
+/local/
+*.env
+# Standing guard: the operator's real secrets file must never be tracked.
+/secrets.env
+# Voice test fixtures, downloaded out of band.
+/crates/gateway/stt/backend-whisper/tests/fixtures/
+# UI build pipeline: npm install target and the esbuild output. The build
+# script writes the bundle to OUT_DIR; `npm run build` still writes dist/ in
+# place for the jsdom tests, and none of it is tracked.
+/crates/gateway/config-ui/ui/node_modules/
+/crates/gateway/config-ui/ui/dist/

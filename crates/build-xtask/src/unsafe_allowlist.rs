@@ -35,11 +35,10 @@ const OWNED: [&str; 7] = [
 /// never scanned cannot be shown clean.
 #[must_use]
 pub(crate) fn unsafe_allowlist_violations(root: &Path) -> Vec<String> {
-    let walk = crate::product::workspace_crates(root);
+    let walk = crate::workspace::crates(root);
     let mut files: Vec<PathBuf> = walk
         .crates
         .iter()
-        .map(|krate| &krate.dir)
         .chain(&walk.unread)
         .filter(|dir| !is_owned(dir))
         .flat_map(|dir| crate::tidy::rust_files(&root.join(dir)))

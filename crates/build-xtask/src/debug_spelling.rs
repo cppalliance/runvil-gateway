@@ -31,11 +31,10 @@ const GROUP_OPEN: &str = "std::fmt::{";
 /// clean.
 #[must_use]
 pub(crate) fn debug_spelling_violations(root: &Path) -> Vec<String> {
-    let walk = crate::product::workspace_crates(root);
+    let walk = crate::workspace::crates(root);
     let mut files: Vec<PathBuf> = walk
         .crates
         .iter()
-        .map(|krate| &krate.dir)
         .chain(&walk.unread)
         .flat_map(|dir| crate::tidy::rust_files(&root.join(dir)))
         .collect();

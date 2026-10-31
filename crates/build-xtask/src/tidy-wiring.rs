@@ -21,7 +21,7 @@ const CEILING_SOURCE: [&str; 4] = ["crates", "build-ceiling", "src", "lib.rs"];
 /// the one its build script alone can show, and a walk that found no
 /// crate fails.
 pub(super) fn ceiling_wiring_violations(root: &Path) -> Vec<String> {
-    let walk = crate::product::workspace_crates(root);
+    let walk = crate::workspace::crates(root);
     if walk.crates.is_empty() && walk.unread.is_empty() {
         return vec![format!(
             "{}: the ceiling wiring check scanned nothing: no workspace crate was found, so \
@@ -31,7 +31,7 @@ pub(super) fn ceiling_wiring_violations(root: &Path) -> Vec<String> {
     }
     let mut violations = Vec::new();
     for krate in &walk.crates {
-        let dir = root.join(&krate.dir);
+        let dir = root.join(krate);
         let manifest = fs::read_to_string(dir.join("Cargo.toml"))
             .ok()
             .and_then(|text| toml::from_str::<toml::Value>(&text).ok());
@@ -223,11 +223,17 @@ mod tests {
             BUILD_DEPENDENCY,
             local,
         );
-        let web = includes("../build-ceiling/src/lib.rs");
-        write_built(root, "plugin-web", "plugin-web", "", Some(&web));
-        let runner = includes("../../build-ceiling/src/lib.rs");
-        let dir = "harness-internal/runner";
-        write_built(root, dir, "harness-runner", "", Some(&runner));
+        let web = includes("../../build-ceiling/src/lib.rs");
+        write_built(
+            root,
+            "gateway/web-search",
+            "gateway-web-search",
+            "",
+            Some(&web),
+        );
+        let stt = includes("../../../build-ceiling/src/lib.rs");
+        let dir = "gateway/stt/engine";
+        write_built(root, dir, "gateway-stt-engine", "", Some(&stt));
         let own = includes("src/lib.rs");
         write_built(root, "build-ceiling", "build-ceiling", "", Some(&own));
     }
@@ -260,22 +266,30 @@ mod tests {
     fn a_crate_with_no_package_root_build_script_fails_even_with_a_src_build_module() {
         let root = tempfile::TempDir::new().expect("tempdir");
         write_wired(root.path());
-        let name = "runvil-parser";
-        let parser = write_built(root.path(), "parser", name, BUILD_DEPENDENCY, None);
-        let module = parser.join("src").join("build.rs");
+        let name = "gateway-progress";
+        let progress = write_built(
+            root.path(),
+            "gateway/progress",
+            name,
+            BUILD_DEPENDENCY,
+            None,
+        );
+        let module = progress.join("src").join("build.rs");
         std::fs::write(module, CALLS_CHECK).expect("the module writes");
         let violations = ceiling_wiring_violations(root.path());
         assert_eq!(violations.len(), 1, "{violations:?}");
-        assert!(violations[0].contains("parser") && violations[0].contains("build.rs"));
+        assert!(violations[0].contains("progress") && violations[0].contains("build.rs"));
     }
 
     #[test]
     fn a_path_include_of_any_file_but_the_ceiling_source_fails() {
-        let build = includes("../plugin-web/src/lib.rs");
-        let name = "harness-gateway-client";
-        let violations = wiring_with(name, name, "", Some(&build));
+        let build = includes("../../config/src/lib.rs");
+        let violations = wiring_with("gateway/logging", "gateway-logging", "", Some(&build));
         assert_eq!(violations.len(), 1, "{violations:?}");
-        assert!(violations[0].contains(name));
+        assert!(
+            violations[0].contains("logging") && violations[0].contains("reaches neither"),
+            "the crate and the missing reach are named: {violations:?}"
+        );
     }
 
     #[test]
