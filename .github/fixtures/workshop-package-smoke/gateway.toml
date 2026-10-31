@@ -1,0 +1,20 @@
+# The configuration a clean machine has after installing the Gateway, as
+# the Workshop's package smoke test presents it. The Workshop launches the
+# sibling Gateway with no profile argument, so the profile named here is
+# selected by the sibling `gateway.state.toml` instead of the command line.
+#
+# The profile selects no model. Readiness must publish on the bind alone,
+# with no download and no child process standing between the bind and the
+# discovery file.
+config-version = 0
+
+[server]
+# An OS-assigned port keeps concurrent gateways from colliding; the
+# discovery file records the port that was bound.
+bind = "127.0.0.1:0"
+api_key = "workshop-package-smoke"
+trust_loopback = true
+
+[[profile]]
+name = "default"
+models = []
