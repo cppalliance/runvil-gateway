@@ -76,12 +76,37 @@ impl GatewayProcess {
         Self { child }
     }
 
-    /// Starts the production binary as an ordinary headless launch, which
+    /// An ordinary launch: the supervisor election, so the launched process
     /// supervises the serving Gateway as its `--supervised` child. Output is
     /// discarded: the supervisor forwards the child's, and an unread pipe
     /// would eventually block both.
     pub(crate) fn spawn_headless_launch(config: &Path, home: &Path, args: &[&str]) -> Self {
+        Self::headless_launch_command(config, home, args)
+            .stdout(Stdio::null())
+            .spawn()
+            .map(|child| Self { child })
+            .expect("the Gateway launch spawns")
+    }
+
+    /// [`Self::spawn_headless_launch`] with stdout piped, so a test can read
+    /// what the supervisor forwarded once it exits. Nothing reads the pipe
+    /// before then, so the launch must stay brief: a full pipe would block
+    /// the supervisor's forwarder and then the child.
+    pub(crate) fn spawn_headless_launch_capturing(
+        config: &Path,
+        home: &Path,
+        args: &[&str],
+    ) -> Self {
+        Self::headless_launch_command(config, home, args)
+            .stdout(Stdio::piped())
+            .spawn()
+            .map(|child| Self { child })
+            .expect("the Gateway launch spawns")
+    }
+
+    fn headless_launch_command(config: &Path, home: &Path, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_runvil-gateway"));
+
         command
             .arg("--config")
             .arg(config)
@@ -92,13 +117,9 @@ impl GatewayProcess {
             .env_remove("RUST_LOG")
             .env_remove("RUNVIL_PROFILE")
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
             .stderr(Stdio::null());
 
         command
-            .spawn()
-            .map(|child| Self { child })
-            .expect("the Gateway launch spawns")
     }
 
     fn spawn_command(config: &Path, home: &Path) -> Command {

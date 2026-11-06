@@ -7,51 +7,223 @@
 //! owns the log file.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Command, ExitCode, ExitStatus, Stdio};
+use std::path::PathBuf;
+use std::process::{Child, ChildStdin, Command, ExitCode, ExitStatus, Stdio};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
-use gateway::AppOptions;
-use gateway_api_discovery::LaunchLock;
+use gateway::{AppOptions, RESTART_REQUESTED};
+use gateway_api_discovery::{GatewayDiscoveryFile, LaunchLock};
+
+/// How long a launched child has to publish its discovery file.
+const PUBLICATION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How often a launching child is checked for publication or exit.
+const PUBLICATION_POLL: Duration = Duration::from_millis(25);
+
+/// The launches one restart may make before the supervisor gives up.
+const MAX_RESTART_LAUNCHES: u32 = 5;
+
+/// The wait before a restart's second launch; it doubles for each launch after.
+const BASE_BACKOFF_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Supervisor entry point: starts and manages the child gateway process,
 /// returning the process exit code when it ends. Holds the launch lock while
 /// the gateway process is running, so another launch attempt attaches to the
 /// live child instead of launching a new gateway.
 pub(crate) fn run(options: &AppOptions, _launch_lock: LaunchLock) -> ExitCode {
-    let mut child = match build_child_command(options).spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            eprintln!("error: could not start the gateway: {error}");
-            return ExitCode::FAILURE;
-        }
+    let Some(run_dir) = options.serve.resolved_run_dir() else {
+        eprintln!("error: no user profile directory for the gateway's run directory");
+        return ExitCode::FAILURE;
     };
 
-    // The child's stdin stays open, unused, for as long as this process
-    // lives. When the pipe closes, the child's watchdog stops it.
-    let _child_stdin = child.stdin.take();
+    let mut browser = options.serve.browser;
 
-    let child_stdout = child.stdout.take();
-    let child_stderr = child.stderr.take();
+    // The port the last child published. Every relaunch asks for it, so a
+    // restart keeps the Settings URL; the first child binds as configured.
+    let mut preferred_port = None;
 
-    // Forward the child's stdout and std_error to this thread's output streams
-    let output_handles = [
-        child_stdout.map(|pipe| OutputStream::Stdout.forward(pipe)),
-        child_stderr.map(|pipe| OutputStream::Stderr.forward(pipe)),
-    ];
+    // Launches made for the pending restart: 0 on the first boot and while
+    // a child serves.
+    let mut restart_launch_count = 0;
 
-    let status = child.wait();
+    loop {
+        let child_options = {
+            let mut child_options = options.clone();
+            child_options.serve = child_options
+                .serve
+                .with_browser(browser)
+                .with_preferred_port(preferred_port);
+            child_options
+        };
 
-    // The pipes close when the child exits; joining flushes its last lines.
-    for handle in output_handles.into_iter().flatten() {
-        let _ = handle.join();
+        let mut child = match SupervisedChild::spawn(&child_options, &run_dir) {
+            Ok(child) => child,
+            Err(error) => {
+                eprintln!("error: could not start the gateway: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        // Only the first launch opens the browser (or not), subsequent restarts never should.
+        browser = false;
+
+        let publication_result = match child.await_publication() {
+            Ok(Launch::Published(port)) => {
+                preferred_port = Some(port);
+
+                match child.wait_for_exit() {
+                    Ok(status) if status.code() == Some(i32::from(RESTART_REQUESTED)) => {
+                        restart_launch_count = 1;
+                        continue;
+                    }
+
+                    Ok(status) => return exit_code(status),
+
+                    Err(error) => {
+                        eprintln!("error: could not wait for the gateway: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+
+            // A child that exits 0 before publishing handed off to a Gateway
+            // it found serving; the supervisor ends with it.
+            Ok(Launch::Exited(status)) if status.success() => return ExitCode::SUCCESS,
+
+            Ok(Launch::Exited(status)) => exit_code(status),
+
+            Ok(Launch::TimedOut) => {
+                eprintln!(
+                    "error: the gateway published no connection within {PUBLICATION_TIMEOUT:?}; stopping it"
+                );
+                child.kill();
+                ExitCode::FAILURE
+            }
+
+            Err(error) => {
+                eprintln!("error: could not watch the gateway start: {error}");
+                child.kill();
+                ExitCode::FAILURE
+            }
+        };
+
+        // A failed first boot is never retried. A failed restart launch is,
+        // until the restart has used all its launches.
+        if restart_launch_count == 0 || restart_launch_count >= MAX_RESTART_LAUNCHES {
+            return publication_result;
+        }
+
+        std::thread::sleep(backoff(restart_launch_count));
+        restart_launch_count += 1;
+    }
+}
+
+/// The wait after a restart's `failed`-th launch fails: 250 ms, then
+/// doubling.
+fn backoff(failed: u32) -> Duration {
+    BASE_BACKOFF_TIMEOUT * 2u32.pow(failed - 1)
+}
+
+/// What a launched child did first.
+enum Launch {
+    /// It published its discovery file on this port and is serving.
+    Published(u16),
+
+    /// It exited before publishing.
+    Exited(ExitStatus),
+
+    /// It published nothing within the timeout and is still running.
+    TimedOut,
+}
+
+/// A running child Gateway, with its held-open stdin and the threads
+/// forwarding its output.
+struct SupervisedChild<'a> {
+    process: Child,
+
+    #[expect(
+        dead_code,
+        reason = "Needs to be held for the child's lifetime or the child's watchdog will kill it. We never write to it, so its unused."
+    )]
+    stdin: Option<ChildStdin>,
+
+    forwarders: Vec<JoinHandle<()>>,
+
+    run_dir: &'a PathBuf,
+}
+
+impl<'a> SupervisedChild<'a> {
+    fn spawn(options: &AppOptions, run_dir: &'a PathBuf) -> std::io::Result<Self> {
+        let mut process = build_child_command(options).spawn()?;
+
+        let stdin = process.stdin.take();
+
+        let forwarders = [
+            process
+                .stdout
+                .take()
+                .map(|pipe| OutputStream::Stdout.forward(pipe)),
+            process
+                .stderr
+                .take()
+                .map(|pipe| OutputStream::Stderr.forward(pipe)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        Ok(Self {
+            process,
+            stdin,
+            forwarders,
+            run_dir,
+        })
     }
 
-    match status {
-        Ok(status) => exit_code(status),
-        Err(error) => {
-            eprintln!("error: could not wait for the gateway: {error}");
-            ExitCode::FAILURE
+    /// Waits until the child publishes its discovery file, exits, or runs
+    /// out of time.
+    fn await_publication(&mut self) -> std::io::Result<Launch> {
+        let deadline = Instant::now() + PUBLICATION_TIMEOUT;
+
+        loop {
+            // Checks if the process has already exited
+            if self.process.try_wait()?.is_some() {
+                return self.wait_for_exit().map(Launch::Exited);
+            }
+
+            // The pid tells this child's record from one the last child left
+            // behind.
+            if let Ok(Some(file)) = GatewayDiscoveryFile::read(self.run_dir)
+                && file.pid == self.process.id()
+            {
+                return Ok(Launch::Published(file.port));
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(Launch::TimedOut);
+            }
+
+            std::thread::sleep(PUBLICATION_POLL);
         }
+    }
+
+    /// Waits for the child to exit and for its last output to be forwarded.
+    fn wait_for_exit(&mut self) -> std::io::Result<ExitStatus> {
+        let status = self.process.wait();
+
+        // The pipes close when the child exits; joining flushes its last lines.
+        for forwarder in self.forwarders.drain(..) {
+            let _ = forwarder.join();
+        }
+
+        status
+    }
+
+    /// Stops the child and waits for it.
+    fn kill(&mut self) {
+        let _ = self.process.kill();
+        let _ = self.wait_for_exit();
     }
 }
 
@@ -80,6 +252,10 @@ fn build_child_command(options: &AppOptions) -> Command {
 
     if options.serve.browser {
         command.arg("--browser");
+    }
+
+    if let Some(port) = options.serve.preferred_port {
+        command.arg("--preferred-port").arg(port.to_string());
     }
 
     command
@@ -124,3 +300,7 @@ fn exit_code(status: ExitStatus) -> ExitCode {
         .and_then(|code| u8::try_from(code).ok())
         .map_or(ExitCode::FAILURE, ExitCode::from)
 }
+
+#[cfg(test)]
+#[path = "supervisor-tests.rs"]
+mod tests;

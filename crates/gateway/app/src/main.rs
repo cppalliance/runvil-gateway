@@ -155,7 +155,7 @@ fn main() -> ExitCode {
                     ShutdownReason::Restart => "gateway restarting",
                 };
 
-                tracing::info!(log_message);
+                tracing::info!("{log_message}");
             }
 
             shutdown_reason.exit_code()
