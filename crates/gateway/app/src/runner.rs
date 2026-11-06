@@ -133,10 +133,20 @@ impl ServeOptions {
         self.preferred_port = port;
         self
     }
+
+    /// The run directory: the one these options name, or the default under
+    /// the user's profile. `None` when there is no profile directory.
+    // TODO: Clean up rundir handling https://github.com/cppalliance/runvil-gateway/issues/2
+    #[must_use]
+    pub fn resolved_run_dir(&self) -> Option<PathBuf> {
+        self.run_dir
+            .clone()
+            .or_else(gateway_api_discovery::default_run_dir)
+    }
 }
 
 /// The parsed app options: the serve options plus how the main thread runs.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppOptions {
     /// What the launch does.
     pub command: LaunchCommand,
