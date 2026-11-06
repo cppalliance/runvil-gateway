@@ -274,7 +274,7 @@ fn serve_thread(
     // The gateway discovery file lands before the readiness signal so a spawned
     // gateway is discoverable the moment `spawn` returns; the guard removes
     // it on every exit path below, graceful shutdown included.
-    let _gateway_discovery_file = gateway_discovery_file_guard(&config, options, address);
+    let gateway_discovery_file = gateway_discovery_file_guard(&config, options, address);
     // Publication counts as a successful gateway start, so from
     // here the rollback config files become stale and should be removed.
     if let Some(config_path) = &rollback_config_path {
@@ -313,10 +313,23 @@ fn serve_thread(
             "no user profile directory found; the cloud provider model sheet is unavailable"
         );
     }
+
+    let shutdown_signal = Arc::clone(&gateway.state.shutdown);
+
     let result = runtime
         .block_on(gateway.serve(listener, shutdown_on_send(shutdown)))
         .map_err(StartupError::serve);
     runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+
+    // A restarting gateway leaves its record for its supervisor, which may
+    // not have polled since the publication: the record tells it this child
+    // served, and on which port. The next child overwrites it.
+    if shutdown_signal.reason() == Some(ShutdownReason::Restart)
+        && let Some(file) = gateway_discovery_file
+    {
+        file.keep();
+    }
+
     result
 }
 
@@ -347,10 +360,30 @@ fn cloud_models_cache_path(options: &ServeOptions) -> Option<PathBuf> {
 struct GatewayDiscoveryFileGuard {
     run_dir: PathBuf,
     pid: u32,
+    remove_on_drop: bool,
+}
+
+impl GatewayDiscoveryFileGuard {
+    fn new(run_dir: PathBuf, pid: u32) -> Self {
+        Self {
+            run_dir,
+            pid,
+            remove_on_drop: true,
+        }
+    }
+
+    /// Leaves the file in place when the guard drops.
+    fn keep(mut self) {
+        self.remove_on_drop = false;
+    }
 }
 
 impl Drop for GatewayDiscoveryFileGuard {
     fn drop(&mut self) {
+        if !self.remove_on_drop {
+            return;
+        }
+
         if let Err(error) = gateway_api_discovery::remove_if_mine(&self.run_dir, self.pid) {
             tracing::warn!("could not remove the gateway discovery file: {error}");
         }
@@ -395,5 +428,5 @@ fn gateway_discovery_file_guard(
         );
         return None;
     }
-    Some(GatewayDiscoveryFileGuard { run_dir, pid })
+    Some(GatewayDiscoveryFileGuard::new(run_dir, pid))
 }
