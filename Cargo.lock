@@ -543,11 +543,11 @@ dependencies = [
 
 [[package]]
 name = "build-ceiling"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "build-llama-cuda"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "build-ceiling",
@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "build-ui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "build-ceiling",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1422,7 +1422,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api-discovery"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "libc",
@@ -1436,7 +1436,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api-types"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "schemars",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-api-types",
@@ -1463,7 +1463,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-config-ui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "build-ceiling",
@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-local"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "build-ceiling",
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-logging"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-api-discovery",
@@ -1516,7 +1516,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-progress"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-api-types",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-protocol"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "build-ceiling",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-routing"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-config",
@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-stt"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-stt-backend-whisper"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-progress",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-stt-engine"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "tempfile",
@@ -1610,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-web-search"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "gateway-config",
@@ -1625,7 +1625,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-whisper-ffi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "hound",
@@ -4064,7 +4064,7 @@ dependencies = [
 
 [[package]]
 name = "shared-error-source"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "build-ceiling",
  "reqwest",
@@ -4075,7 +4075,7 @@ dependencies = [
 
 [[package]]
 name = "shared-loopback"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "build-ceiling",
