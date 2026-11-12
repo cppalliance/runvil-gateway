@@ -1,0 +1,52 @@
+# This form never applies the `agent-ready` label. A person adds it after reading the report.
+# `type: Bug` uses the organization's Bug issue type.
+name: Bug report
+description: Something in merged code does not work as it should.
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: One bug per issue. Search open issues first.
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: The actual result, with the exact error text where there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened?
+      description: The result you expected, and what says so (docs, config, a standard).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest steps from a clean start, with config lines and the exact request or command.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release tag, or the output of `git rev-parse --short HEAD` if built from source.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant error or log lines. Remove keys and tokens first.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: The route, config section, crate or file, if you know it.
+    validations:
+      required: false
