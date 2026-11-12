@@ -12,7 +12,7 @@ exclude = ["crates/shared-ui", "crates/gateway", "crates/gateway/stt"]
 default-members = ["crates/gateway/app"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 # The oldest toolchain the workspace is written against. `rust-toolchain.toml`
 # pins the channel every build and test uses, which is later than this floor.
