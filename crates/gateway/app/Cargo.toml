@@ -87,6 +87,7 @@ tokio = { workspace = true, features = ["signal"] }
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+utoipa.workspace = true
 
 # First-run STT gating reads the installer's registry choice (src/boot.rs):
 # RegOpenKeyExW + RegQueryValueExW. The Windows tray backend (src/tray/) adds
@@ -146,6 +147,9 @@ test-fixtures = ["local", "gateway-local/test-fixtures", "dep:anyhow"]
 
 [dev-dependencies]
 anyhow.workspace = true
+# Validates the generated OpenAPI document against the vendored OAS 3.1
+# schemas, offline.
+jsonschema.workspace = true
 # The crate dev-depends on itself so every test target builds the library
 # with test-fixtures enabled, without gate commands needing a --features
 # flag: the integration suites drive the speech relay's test-scaled bounds.

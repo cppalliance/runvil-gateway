@@ -14,13 +14,17 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use gateway_config::ModelKind;
 use gateway_protocol::ProtocolError;
+use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::AppState;
 use crate::auth::AuthedCaller;
 use crate::error::{GatewayError, WireJson};
 use crate::registry::RouteInfo;
 use crate::relay::{CLIENT_HEADER, resolve_routed_model};
-use crate::wire::{SpeechRequest, SpeechResponseFormat, SpeechStreamFormat, SpeechVoice};
+use crate::wire::{
+    ErrorEnvelope, SpeechRequest, SpeechResponseFormat, SpeechStreamFormat, SpeechVoice,
+};
 
 const AUDIO_SPEECH: RouteInfo = RouteInfo::open("/v1/audio/speech", &[Method::POST]);
 const AUDIO_VOICES: RouteInfo = RouteInfo::open("/v1/audio/voices", &[Method::GET]);
@@ -53,6 +57,38 @@ pub(crate) fn routes() -> Router<AppState> {
 /// under the bounded background relay [`relay_audio`] documents, so every
 /// early end - a tripped bound or an upstream failure - fails the client's
 /// body read rather than truncating it.
+#[utoipa::path(
+    post,
+    path = AUDIO_SPEECH.path,
+    operation_id = "post_v1_audio_speech",
+    tag = "speech",
+    params(
+        ("X-Runvil-Client" = Option<String>, Header, nullable = false, description = "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.", extensions(
+            ("x-runvil-extension" = json!(true)),
+            ("x-runvil-opt-in" = json!("The client chooses to send the header.")),
+        )),
+    ),
+    request_body = SpeechRequest,
+    responses(
+        (status = 200, description = "The synthesized audio as a chunked byte stream. The `Content-Type` is the upstream's when it sends a valid one, otherwise the type for `response_format`, or `text/event-stream` when `stream_format` is `sse`. A failure after the headers aborts the body read.", content(
+            ("audio/mpeg"), ("audio/ogg"), ("audio/aac"), ("audio/flac"), ("audio/wav"), ("audio/pcm"), ("text/event-stream"),
+        )),
+        (status = 400, description = "The body is not JSON this route accepts or failed validation, the voice is not one the model offers, or the model is of another kind or its upstream cannot serve speech.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "The request named a model with no `[[model]]` entry.", body = ErrorEnvelope),
+        (status = 429, description = "The model's queue turned the request away at capacity, or the upstream rate-limited the request.", body = ErrorEnvelope),
+        (status = "4XX", description = "The upstream backend answered with this client error status, passed through. An upstream 429 is mapped to the 429 above instead.", body = ErrorEnvelope),
+        (status = 502, description = "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.", body = ErrorEnvelope),
+        (status = 503, description = "The named local model is still loading, a queue command is provisioning it, its queue is full, or the upstream answered 503.", body = ErrorEnvelope, headers(
+            ("Retry-After" = u16, description = "Seconds to wait, always 5. Sent only while the named local model's child is spawning."),
+        )),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn audio_speech(
     State(state): State<AppState>,
     caller: AuthedCaller,
@@ -322,10 +358,26 @@ fn speech_fallback_mime(
 /// compatibility surface pinned by the integration suite. `name` mirrors
 /// `id`: the catalog configures voices as bare strings with no separate
 /// display name.
+#[utoipa::path(
+    get,
+    path = AUDIO_VOICES.path,
+    operation_id = "get_v1_audio_voices",
+    tag = "speech",
+    responses(
+        (status = 200, description = "The active profile's speech voices.", body = VoicesReply),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+    ),
+    extensions(
+        ("x-runvil-extension" = json!(true)),
+        ("x-runvil-opt-in" = json!(false)),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn audio_voices(
     State(state): State<AppState>,
     _caller: AuthedCaller,
-) -> Result<Json<serde_json::Value>, GatewayError> {
+) -> Result<Json<VoicesReply>, GatewayError> {
     let routing = state.routing().await;
     let voices = routing
         .models()
@@ -334,9 +386,30 @@ async fn audio_voices(
         .flat_map(|model| model.capabilities.voices().iter())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .map(|voice| serde_json::json!({ "id": voice, "name": voice }))
+        .map(|voice| Voice {
+            id: voice.clone(),
+            name: voice.clone(),
+        })
         .collect::<Vec<_>>();
-    Ok(Json(serde_json::json!({ "voices": voices })))
+    Ok(Json(VoicesReply { voices }))
+}
+
+/// One voice in the `GET /v1/audio/voices` body. `name` mirrors `id`: the
+/// catalog configures voices as bare strings with no separate display name.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct Voice {
+    /// The voice identifier clients send as `voice`.
+    id: String,
+    /// The display name. It mirrors `id`.
+    name: String,
+}
+
+/// The `GET /v1/audio/voices` body: the deduplicated, sorted voices under
+/// `voices`.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct VoicesReply {
+    /// The active profile's speech voices.
+    voices: Vec<Voice>,
 }
 
 /// Generic speech lifecycle facts included in Gateway operational status.

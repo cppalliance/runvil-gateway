@@ -1,5 +1,19 @@
 //! Validation of the realtime WebSocket upgrade query string.
 
+/// The one `intent` the upgrade accepts.
+// `validate` checks the raw query string; this type names the value for the
+// OpenAPI description only.
+#[derive(utoipa::ToSchema)]
+#[schema(rename_all = "lowercase")]
+#[expect(
+    dead_code,
+    reason = "the OpenAPI description reads this type; the route validates the raw query"
+)]
+pub(super) enum RealtimeIntent {
+    /// A transcription session.
+    Transcription,
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(super) enum QueryError {
     MissingIntent,

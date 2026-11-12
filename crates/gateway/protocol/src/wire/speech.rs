@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use utoipa::ToSchema;
 
 /// The largest `input` a speech request may contain, in characters (OpenAI's
 /// cap, and the cap the route enforces).
@@ -16,7 +17,7 @@ const MAX_SPEECH_SPEED: f32 = 4.0;
 /// The voice to synthesize with: a plain name or the OpenAI object form
 /// (`{"id": "..."}`). Membership in a model's catalog is checked at the
 /// route, never here, because voice sets are per-checkpoint.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum SpeechVoice {
@@ -33,7 +34,7 @@ pub enum SpeechVoice {
 ///
 /// The set is closed on purpose: provider-only spellings (Together's `raw`
 /// and `mulaw`) stay unrepresentable until the enum is deliberately widened.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum SpeechResponseFormat {
@@ -55,7 +56,7 @@ pub enum SpeechResponseFormat {
 }
 
 /// How a streaming speech response is framed (the OpenAI set).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum SpeechStreamFormat {
@@ -66,12 +67,13 @@ pub enum SpeechStreamFormat {
 }
 
 /// An incoming speech synthesis request.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 #[non_exhaustive]
 pub struct SpeechRequest {
     /// The model name, resolved against the routing table.
     pub model: String,
     /// The text to synthesize, at most 4096 characters.
+    #[schema(min_length = 1, max_length = 4096)]
     pub input: String,
     /// The voice to synthesize with.
     pub voice: SpeechVoice,
@@ -79,9 +81,11 @@ pub struct SpeechRequest {
     /// deserialization, so the pin is structural and every forwarded body
     /// includes it.
     #[serde(default)]
+    #[schema(default = SpeechResponseFormat::default)]
     pub response_format: SpeechResponseFormat,
     /// The playback speed (0.25 to 4.0); absent means the backend's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 0.25, maximum = 4.0)]
     pub speed: Option<f32>,
     /// Style-control instructions (the gpt-4o-mini-tts dialect's field);
     /// absent means the backend's default.

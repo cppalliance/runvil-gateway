@@ -6,12 +6,13 @@ use axum::http::Method;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::AppState;
 use crate::auth::AuthedCaller;
 use crate::error::GatewayError;
 use crate::registry::RouteInfo;
-use crate::wire::ModelInfo;
+use crate::wire::{ErrorEnvelope, ModelInfo};
 
 const LIST_MODELS: RouteInfo = RouteInfo::open("/v1/models", &[Method::GET]);
 
@@ -24,7 +25,7 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// The model-list wire response, including routed and active speech models.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct CatalogModelsResponse {
     /// Always `"list"`.
     object: &'static str,
@@ -33,7 +34,7 @@ struct CatalogModelsResponse {
 }
 
 /// One routed inference model or active speech model.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(untagged)]
 enum CatalogModelInfo {
     /// Existing chat, embedding, classifier, or speech metadata.
@@ -60,14 +61,30 @@ impl CatalogModelInfo {
 
 /// Speech metadata contains only fields meaningful to transcription clients.
 #[cfg(feature = "stt")]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct SpeechCatalogModelInfo {
     id: String,
     object: &'static str,
+    #[schema(extensions(("x-runvil-extension" = json!(true)), ("x-runvil-opt-in" = json!(false))))]
     kind: &'static str,
 }
 
 /// Bearer-authed catalog of configured models for catalog bind.
+#[utoipa::path(
+    get,
+    path = LIST_MODELS.path,
+    operation_id = "get_v1_models",
+    tag = "models",
+    responses(
+        (status = 200, description = "The routed models, then the active speech models in `stt` builds.", body = CatalogModelsResponse),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn list_models(
     State(state): State<AppState>,
     _caller: AuthedCaller,
