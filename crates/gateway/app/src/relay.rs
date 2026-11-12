@@ -18,7 +18,8 @@ use crate::auth::AuthedCaller;
 use crate::error::{GatewayError, WireJson};
 use crate::registry::RouteInfo;
 use crate::wire::{
-    ChatRequest, EmbeddingRequest, EmbeddingResponse, RerankRequest, RerankResponse,
+    ChatRequest, ChatResponse, EmbeddingRequest, EmbeddingResponse, ErrorEnvelope, RerankRequest,
+    RerankResponse,
 };
 
 /// Header naming the caller for fair queue scheduling. Absent → `"default"`.
@@ -78,6 +79,45 @@ pub(crate) async fn resolve_routed_model(
 }
 
 /// The chat route to a backend.
+#[utoipa::path(
+    post,
+    path = CHAT_COMPLETIONS.path,
+    operation_id = "post_v1_chat_completions",
+    tag = "relay",
+    params(
+        ("X-Runvil-Client" = Option<String>, Header, nullable = false, description = "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.", extensions(
+            ("x-runvil-extension" = json!(true)),
+            ("x-runvil-opt-in" = json!("The client chooses to send the header.")),
+        )),
+    ),
+    request_body = ChatRequest,
+    responses(
+        (status = 200, description = "The completion. With `stream: true` the body is a server-sent event stream instead: one `data:` line per chunk in the `ChatChunk` schema, an `ErrorEnvelope` line if the upstream fails mid-stream, then `data: [DONE]`. The upstream's `Content-Type` is forwarded when it sends one.", content(
+            (ChatResponse = "application/json"),
+            (String = "text/event-stream"),
+        )),
+        (status = 400, description = "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "The request named a model with no `[[model]]` entry.", body = ErrorEnvelope),
+        (status = 429, description = "The model's queue turned the request away at capacity.", body = ErrorEnvelope),
+        (status = "4XX", description = "The upstream backend answered with this client error status, passed through.", body = ErrorEnvelope),
+        (status = 502, description = "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.", body = ErrorEnvelope),
+        (status = 503, description = "The named local model is still loading, a queue command is provisioning it, or its queue is full.", body = ErrorEnvelope, headers(
+            ("Retry-After" = u16, description = "Seconds to wait, always 5. Sent only while the named local model's child is spawning."),
+        )),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai")),
+        ("x-runvil-loopback-trust" = json!(true)),
+        ("x-runvil-extension-fields" = json!([{
+            "name": "choices[].message.gateway_warning",
+            "description": "When an emulated tool dialect recovers from a malformed tool fence, the affected choice's message reports the reason under `gateway_warning` next to its emptied `content`.",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+        }])),
+    ),
+)]
 async fn chat_completions(
     State(state): State<AppState>,
     caller: AuthedCaller,
@@ -213,6 +253,36 @@ fn relay_sse(streamed: crate::upstream::StreamedChunks, permit: crate::queue::Pe
 
 /// The embeddings route to a backend: the same auth, routing, kind guard, and
 /// dominion queue admission as chat, for `kind = "embedding"` models.
+#[utoipa::path(
+    post,
+    path = EMBEDDINGS.path,
+    operation_id = "post_v1_embeddings",
+    tag = "relay",
+    params(
+        ("X-Runvil-Client" = Option<String>, Header, nullable = false, description = "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.", extensions(
+            ("x-runvil-extension" = json!(true)),
+            ("x-runvil-opt-in" = json!("The client chooses to send the header.")),
+        )),
+    ),
+    request_body = EmbeddingRequest,
+    responses(
+        (status = 200, description = "The embeddings, as the upstream returned them.", body = EmbeddingResponse),
+        (status = 400, description = "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "The request named a model with no `[[model]]` entry.", body = ErrorEnvelope),
+        (status = 429, description = "The model's queue turned the request away at capacity.", body = ErrorEnvelope),
+        (status = "4XX", description = "The upstream backend answered with this client error status, passed through.", body = ErrorEnvelope),
+        (status = 502, description = "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.", body = ErrorEnvelope),
+        (status = 503, description = "The named local model is still loading, a queue command is provisioning it, or its queue is full.", body = ErrorEnvelope, headers(
+            ("Retry-After" = u16, description = "Seconds to wait, always 5. Sent only while the named local model's child is spawning."),
+        )),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn embeddings(
     State(state): State<AppState>,
     caller: AuthedCaller,
@@ -242,6 +312,36 @@ async fn embeddings(
 
 /// The rerank route to a backend: the same auth, routing, kind guard, and
 /// dominion queue admission as chat, for `kind = "classifier"` models.
+#[utoipa::path(
+    post,
+    path = RERANK.path,
+    operation_id = "post_v1_rerank",
+    tag = "relay",
+    params(
+        ("X-Runvil-Client" = Option<String>, Header, nullable = false, description = "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.", extensions(
+            ("x-runvil-extension" = json!(true)),
+            ("x-runvil-opt-in" = json!("The client chooses to send the header.")),
+        )),
+    ),
+    request_body = RerankRequest,
+    responses(
+        (status = 200, description = "The ranked results, as the upstream returned them.", body = RerankResponse),
+        (status = 400, description = "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "The request named a model with no `[[model]]` entry.", body = ErrorEnvelope),
+        (status = 429, description = "The model's queue turned the request away at capacity.", body = ErrorEnvelope),
+        (status = "4XX", description = "The upstream backend answered with this client error status, passed through.", body = ErrorEnvelope),
+        (status = 502, description = "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.", body = ErrorEnvelope),
+        (status = 503, description = "The named local model is still loading, a queue command is provisioning it, or its queue is full.", body = ErrorEnvelope, headers(
+            ("Retry-After" = u16, description = "Seconds to wait, always 5. Sent only while the named local model's child is spawning."),
+        )),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("jina-cohere-rerank")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn rerank(
     State(state): State<AppState>,
     caller: AuthedCaller,

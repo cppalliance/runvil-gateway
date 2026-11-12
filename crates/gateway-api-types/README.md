@@ -1,6 +1,6 @@
 # Gateway API types
 
-The Gateway's public wire vocabulary. This crate holds the provider model sheet schema, one versioned JSON snapshot of every provider's models that the Gateway downloads at runtime and that a separate repository publishes weekly, plus the model metadata types and the progress snapshot the Gateway streams to its status consumers. It depends on `serde`, `time`, and `schemars`, and on no other workspace crate, so every product crate may depend on it.
+The Gateway's public wire vocabulary. This crate holds the provider model sheet schema, one versioned JSON snapshot of every provider's models that the Gateway downloads at runtime and that a separate repository publishes weekly, plus the model metadata types and the progress snapshot the Gateway streams to its status consumers. It depends on `serde`, `time`, `schemars`, and `utoipa`, which derives the model metadata's schemas in the Gateway's OpenAPI description, and on no other workspace crate, so every product crate may depend on it.
 
 ## The committed schema
 

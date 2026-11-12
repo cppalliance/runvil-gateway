@@ -8,19 +8,26 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use gateway_protocol::wire::ErrorEnvelope;
 use gateway_stt_engine::{DecodeRequest, EnginePolicy};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::artifacts::SpeechError;
 use crate::generation::GenerationState;
 use crate::guidance::prompt_terms;
+
+/// The batch transcription route's path.
+pub const TRANSCRIPTIONS_PATH: &str = "/v1/audio/transcriptions";
 
 const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 const BODY_LIMIT: usize = MAX_AUDIO_BYTES + 1024 * 1024;
 /// The whisper workers decode with this language fixed.
 const LANGUAGE: &str = "en";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The reply dialect a request asks for in `response_format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[schema(as = TranscriptionResponseFormat, rename_all = "snake_case")]
 enum ResponseFormat {
     Json,
     VerboseJson,
@@ -35,7 +42,9 @@ struct TranscriptionForm {
     granularities: Vec<TimestampGranularity>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One value of `timestamp_granularities[]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[schema(rename_all = "lowercase")]
 enum TimestampGranularity {
     Word,
     Segment,
@@ -46,14 +55,14 @@ fn default_granularities() -> Vec<TimestampGranularity> {
 }
 
 /// A basic OpenAI transcription response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 struct JsonTranscription {
     /// The decoded transcript.
     pub text: String,
 }
 
 /// One clip-level segment in a verbose transcription response.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 struct TranscriptionSegment {
     /// Zero-based segment identifier.
     pub id: u32,
@@ -66,7 +75,7 @@ struct TranscriptionSegment {
 }
 
 /// An OpenAI verbose transcription response.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 struct VerboseJsonTranscription {
     /// Requested task name.
     pub task: &'static str,
@@ -84,7 +93,7 @@ struct VerboseJsonTranscription {
 }
 
 /// A successful transcription in the requested OpenAI JSON dialect.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
 enum TranscriptionResponse {
     /// The compact `json` response.
@@ -93,13 +102,80 @@ enum TranscriptionResponse {
     VerboseJson(VerboseJsonTranscription),
 }
 
+/// The form fields the route reads. A part with another name is ignored.
+// The handler walks the parts by hand; this type names the form for the
+// OpenAPI description only.
+#[derive(ToSchema)]
+#[expect(
+    dead_code,
+    reason = "the OpenAPI description reads this type; the handler parses the parts itself"
+)]
+struct TranscriptionUpload {
+    /// The audio to transcribe, as a WAV file of 16 kHz mono samples. A
+    /// file over 25 MiB is refused with 413 while it is read, and any other
+    /// format, sample rate, or channel count is refused with 400.
+    #[schema(value_type = String, format = Binary)]
+    file: Vec<u8>,
+    /// A speech model name that `GET /v1/models` lists: the configured
+    /// interim or final model, or `realtime-transcribe`, which decodes with
+    /// the final model and exists only while one is configured.
+    model: String,
+    /// Accepted only as `en`, the one language the speech models
+    /// transcribe. Any other value is refused with 400.
+    #[schema(required = false, pattern = "^en$")]
+    language: String,
+    /// `json`, the default, or `verbose_json`. Any other value, including
+    /// OpenAI's `text`, `srt`, and `vtt`, is refused with 400.
+    #[schema(required = false)]
+    response_format: ResponseFormat,
+    /// Repeatable. A valid value changes nothing: a `verbose_json` reply
+    /// always holds one segment for the whole clip and no word timestamps.
+    #[schema(rename = "timestamp_granularities[]", required = false)]
+    timestamp_granularities: Vec<TimestampGranularity>,
+    /// Validated, then not used: a finite number of zero or more, or the
+    /// request is refused with 400.
+    #[schema(required = false, minimum = 0)]
+    temperature: f32,
+    /// Comma-separated terms the decoder is biased toward, read as a term
+    /// list rather than OpenAI's free-text prompt. Terms that do not fit the
+    /// decoder's prompt are dropped from the end.
+    #[schema(required = false)]
+    prompt: String,
+}
+
 pub(crate) fn routes(state: GenerationState) -> Router {
     Router::new()
-        .route("/v1/audio/transcriptions", post(handler))
+        .route(TRANSCRIPTIONS_PATH, post(handler))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT))
         .with_state(state)
 }
 
+/// Transcribes one uploaded WAV clip with a loaded speech model, in the
+/// shape of OpenAI's transcription route.
+///
+/// The reply is `{"text"}` by default, or the `verbose_json` object when
+/// `response_format` asks for it.
+#[utoipa::path(
+    post,
+    path = TRANSCRIPTIONS_PATH,
+    operation_id = "post_v1_audio_transcriptions",
+    tag = "stt",
+    request_body(content = inline(TranscriptionUpload), content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "The transcript, in the dialect `response_format` named.", body = TranscriptionResponse),
+        (status = 400, description = "The body is not readable multipart form data, lacks `file` or `model`, holds a refused field value, or carries audio that is not a 16 kHz mono WAV.", body = ErrorEnvelope),
+        (status = 401, description = "The Gateway's auth layer refused the caller: the bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "`model` names no speech model the gateway serves right now, which is every name while the speech models are not loaded.", body = ErrorEnvelope),
+        (status = 413, description = "The `file` field passed 25 MiB.", body = ErrorEnvelope),
+        (status = 500, description = "Decoding failed after every check passed, which includes a speech worker whose queue is full. The `message` is always `transcription failed`.", body = ErrorEnvelope),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai")),
+        ("x-runvil-feature" = json!("stt")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn handler(
     State(state): State<GenerationState>,
     multipart: Result<Multipart, MultipartRejection>,

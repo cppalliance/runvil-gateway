@@ -93,6 +93,12 @@ jobs:
       - name: Check the headless gateway
         run: cargo check --locked -p gateway --no-default-features
 
+      # The OpenAPI description covers the default build. This step checks
+      # that removing every element marked for a feature this build lacks
+      # leaves exactly the description the reduced build generates.
+      - name: Check the OpenAPI feature markers
+        run: cargo nextest run --locked -p gateway --no-default-features -E 'test(/openapi/)'
+
       # No build step may write into the repository: the UI bundle lands in
       # OUT_DIR. Catch a regression here rather than in a stray diff.
       - name: Clean tree

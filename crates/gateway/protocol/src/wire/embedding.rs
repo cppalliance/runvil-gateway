@@ -2,9 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use utoipa::ToSchema;
 
 /// The text to embed: one string or a batch of strings (OpenAI shape).
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum EmbeddingInput {
@@ -15,7 +16,7 @@ pub enum EmbeddingInput {
 }
 
 /// An incoming embeddings request.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct EmbeddingRequest {
     /// The model name, resolved against the routing table.
     pub model: String,
@@ -61,7 +62,7 @@ impl EmbeddingRequest {
 }
 
 /// An outgoing embeddings response.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 #[non_exhaustive]
 pub struct EmbeddingResponse {
     /// The model name, rewritten to the caller's requested name.

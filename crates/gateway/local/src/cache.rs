@@ -17,6 +17,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::artifacts::{
     DownloadProgress, download_client, download_with_progress, enforce_private_cache_root,
@@ -87,11 +88,12 @@ pub(crate) fn write_blob_meta(
 }
 
 /// One entry of the cache listing: a blob plus the source it was fetched from.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 pub struct CacheEntry {
     /// The URL the blob was downloaded from.
     pub source: String,
     /// Absolute path of the blob under the cache root.
+    #[schema(value_type = String)]
     pub path: PathBuf,
     /// Lowercase hex SHA-256 of the blob's bytes.
     pub sha256: String,

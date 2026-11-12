@@ -8,6 +8,7 @@
 //! check, and the profile-switch reload; this crate owns everything past auth.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use gateway_config::{Secret, WebSearchConfig};
 
@@ -80,7 +81,7 @@ impl WebSearchState {
 }
 
 /// The request body for `POST /v1/tools/web_search`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WebSearchRequest {
     /// The search query.
@@ -89,6 +90,7 @@ pub struct WebSearchRequest {
     /// [`WebSearchConfig::default_count`] and is clamped to
     /// [`WebSearchConfig::max_count`].
     #[serde(default)]
+    #[schema(maximum = 255)]
     pub count: Option<u8>,
     /// Freshness filter; empty or absent means omit from the provider query.
     #[serde(default)]
@@ -111,7 +113,7 @@ pub struct WebSearchRequest {
 }
 
 /// The response body for `POST /v1/tools/web_search`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct WebSearchResponse {
     /// The trimmed request query that produced these results.
     pub query: String,
@@ -120,7 +122,7 @@ pub struct WebSearchResponse {
 }
 
 /// One search result, trimmed to the fields the executor needs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct SearchResult {
     /// The result's title.
     pub title: String,

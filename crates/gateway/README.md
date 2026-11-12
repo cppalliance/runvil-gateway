@@ -72,4 +72,4 @@ Before a route or a wire type changes, answer four questions:
 3. Does the client still work without the addition?
 4. Is the addition named as an extension in the spec?
 
-The spec belongs with the gateway. The intended arrangement is a spec generated from the gateway's source rather than written by hand, with CI comparing the two so a route or a field cannot drift from its description. That keeps the principle in a check instead of in someone's memory.
+The spec is [`crates/gateway/app/openapi.json`](app/openapi.json), generated from the gateway's source. `cargo test -p gateway --lib openapi` compares it with a fresh generation, so a route or a field cannot drift from its description.

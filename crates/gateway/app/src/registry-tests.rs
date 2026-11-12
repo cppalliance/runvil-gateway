@@ -60,6 +60,25 @@ fn routes_in(tier: Tier) -> Vec<RouteInfo> {
         .collect()
 }
 
+/// The config UI entries are the gateway's `/config` mount joined to the
+/// asset paths that crate binds, so renaming an asset there fails here.
+#[cfg(feature = "config-ui")]
+#[test]
+fn config_ui_paths_are_the_mount_plus_the_exported_asset_paths() {
+    let mounted: Vec<&str> = super::CONFIG_UI_ROUTES
+        .iter()
+        .map(|route| route.path)
+        .collect();
+    let exported: Vec<String> = gateway_config_ui::ASSET_PATHS
+        .iter()
+        .map(|suffix| format!("/config{suffix}"))
+        .collect();
+    assert_eq!(
+        mounted,
+        exported.iter().map(String::as_str).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn the_registry_names_every_path_once_and_both_tiers() {
     let routes = all();

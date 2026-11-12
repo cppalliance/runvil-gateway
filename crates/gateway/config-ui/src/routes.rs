@@ -6,19 +6,39 @@ use axum::routing::get;
 
 use crate::{assets, require_loopback};
 
+/// The index page, relative to wherever the gateway nests this router.
+const INDEX_PATH: &str = "/";
+/// The bundled application script.
+const APP_JS_PATH: &str = "/app.js";
+/// The bundled stylesheet.
+const APP_CSS_PATH: &str = "/app.css";
+/// The program icon at 1x.
+const ICON_PATH: &str = "/icons/runvil-icon.png";
+/// The program icon at 2x.
+const ICON_2X_PATH: &str = "/icons/runvil-icon@2x.png";
+
+/// The asset paths [`routes`] binds, in mount order. The index references
+/// its assets by relative path, so any mount point works; the gateway's
+/// registry prepends its own mount.
+pub const ASSET_PATHS: &[&str] = &[
+    INDEX_PATH,
+    APP_JS_PATH,
+    APP_CSS_PATH,
+    ICON_PATH,
+    ICON_2X_PATH,
+];
+
 /// The config UI asset routes - the index page, the bundled script and
 /// stylesheet, and the program icon at 1x and 2x - with
 /// [`require_loopback`] already applied, so every asset answers 403 to a
-/// non-loopback peer. The gateway nests this router at `/config`; the
-/// index references its assets by relative path, so any mount point
-/// works.
+/// non-loopback peer. The gateway nests this router at `/config`.
 pub fn routes() -> Router {
     Router::new()
-        .route("/", get(ui_index))
-        .route("/app.js", get(ui_app_js))
-        .route("/app.css", get(ui_app_css))
-        .route("/icons/runvil-icon.png", get(ui_program_icon))
-        .route("/icons/runvil-icon@2x.png", get(ui_program_icon_2x))
+        .route(INDEX_PATH, get(ui_index))
+        .route(APP_JS_PATH, get(ui_app_js))
+        .route(APP_CSS_PATH, get(ui_app_css))
+        .route(ICON_PATH, get(ui_program_icon))
+        .route(ICON_2X_PATH, get(ui_program_icon_2x))
         .layer(axum::middleware::from_fn(require_loopback))
 }
 

@@ -18,6 +18,7 @@ gateway-api-types.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+utoipa.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

@@ -20,5 +20,5 @@
 mod assets;
 mod routes;
 
-pub use routes::routes;
+pub use routes::{ASSET_PATHS, routes};
 pub use shared_loopback::require_loopback;

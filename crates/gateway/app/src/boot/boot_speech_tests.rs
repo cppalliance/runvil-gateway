@@ -14,8 +14,6 @@ use std::time::Duration;
 
 use gateway_config::{Config, ProfileName};
 use gateway_stt::test_fixtures::{ScriptedDecoder, ScriptedModelFactory};
-use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
-use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::Command;
@@ -117,7 +115,9 @@ async fn transcribe(addr: std::net::SocketAddr) -> reqwest::Response {
 /// The Realtime upgrade's status code: 101 once speech is ready with a
 /// final pass, 503 before. A successful upgrade is closed explicitly so
 /// the server-side session releases its admission before shutdown.
+#[cfg(feature = "config-ui")]
 async fn realtime_upgrade_status(addr: std::net::SocketAddr) -> u16 {
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest as _, http::HeaderValue};
     let mut request = format!("ws://{addr}/v1/realtime?intent=transcription")
         .into_client_request()
         .expect("Realtime request builds");
