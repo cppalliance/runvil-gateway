@@ -21,7 +21,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get};
 use axum::{Json, Router};
 use gateway_progress::Activity;
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -74,9 +75,55 @@ async fn list_cache(
     Ok(Json(entries))
 }
 
+/// The `DELETE /v1/cache/{sha256}` body: the removed digest.
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct CacheDeletedReply {
+    /// The digest that was removed.
+    sha256: String,
+    /// Always `deleted`.
+    status: &'static str,
+}
+
+/// A cache download's progress event: `bytes` so far and `total` when the
+/// upstream sent a content length, null when it did not.
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct CacheDownloadEvent {
+    /// Bytes written so far.
+    bytes: u64,
+    /// Always `downloading`.
+    status: &'static str,
+    /// The upstream content length, or null when it sent none.
+    total: Option<u64>,
+}
+
+/// A ready cache blob: the hit body and the stream's terminal `ready` event
+/// share this shape. The handlers still build it with `json!`, because a
+/// `PathBuf` that is not valid UTF-8 panics inside `json!` and a typed reply
+/// would answer an error instead. The type exists so the description's schema
+/// comes from the same fields.
+#[cfg(test)]
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct CacheReadyReply {
+    /// Absolute path of the cached blob.
+    path: std::path::PathBuf,
+    /// Always `ready`.
+    status: &'static str,
+}
+
+/// The stream's terminal failure event. The handler still builds it with
+/// `json!`; this type is the schema.
+#[cfg(test)]
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct CacheErrorEvent {
+    /// The failure, rendered for the client.
+    message: String,
+    /// Always `error`.
+    status: &'static str,
+}
+
 /// The `POST /v1/cache` request body.
-#[derive(Debug, Deserialize)]
-struct CacheRequest {
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct CacheRequest {
     /// The http(s) URL to download.
     source: String,
     /// Optional SHA-256 pin, verified against the downloaded bytes.
@@ -165,11 +212,14 @@ async fn post_cache(
 /// Answers 200 with `{"status": "deleted", "sha256"}` when an entry was
 /// removed, 404 `cache_entry_not_found` when no sidecar records the digest,
 /// and 400 when the path parameter is not a 64-character hex digest.
+///
+/// `sha256`: The SHA-256 digest of the cached file, as `GET /v1/cache` lists
+/// it: 64 hexadecimal characters, in either case.
 async fn delete_cache(
     State(state): State<AppState>,
     _caller: AuthedCaller,
     Path(sha256): Path<String>,
-) -> Result<Json<serde_json::Value>, GatewayError> {
+) -> Result<Json<CacheDeletedReply>, GatewayError> {
     let wanted = parse_expected_digest(&sha256)
         .map_err(|error| GatewayError::MalformedRequest(error.to_string()))?;
     let cache_dir = live_cache_dir(&state).await;
@@ -180,10 +230,10 @@ async fn delete_cache(
     if !removed {
         return Err(GatewayError::CacheEntryNotFound(wanted));
     }
-    Ok(Json(serde_json::json!({
-        "status": "deleted",
-        "sha256": wanted,
-    })))
+    Ok(Json(CacheDeletedReply {
+        sha256: wanted,
+        status: "deleted",
+    }))
 }
 
 /// The byte counts of one cache download, as the SSE payload reports them.
@@ -319,14 +369,17 @@ fn downloading_line(sample: Sample) -> String {
         downloaded: bytes,
         total,
     } = sample;
-    format!(
-        "data: {}\n\n",
-        serde_json::json!({
-            "status": "downloading",
-            "bytes": bytes,
-            "total": total,
-        })
-    )
+    let event = CacheDownloadEvent {
+        bytes,
+        status: "downloading",
+        total,
+    };
+    // The fields are numbers, a static string, and an optional number, so
+    // serialization cannot fail.
+    let Ok(json) = serde_json::to_string(&event) else {
+        unreachable!("a cache download event is numbers and a string");
+    };
+    format!("data: {json}\n\n")
 }
 
 /// Maps the download task's join result to the stream's terminal event.

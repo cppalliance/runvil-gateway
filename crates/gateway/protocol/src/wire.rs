@@ -14,6 +14,7 @@
 //! the affected choice's message reports the reason under `gateway_warning`
 //! next to its emptied `content`. Downstream serde ignores the unknown field.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -28,7 +29,7 @@ pub use self::rerank::{RerankRequest, RerankResponse};
 pub use self::speech::{SpeechRequest, SpeechResponseFormat, SpeechStreamFormat, SpeechVoice};
 
 /// An incoming chat completions request.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct ChatRequest {
     /// The model name, resolved against the routing table.
     pub model: String,
@@ -124,7 +125,7 @@ fn validate_message(message: &Value) -> Result<(), &'static str> {
 }
 
 /// An outgoing chat completions response.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct ChatResponse {
     /// The model name, rewritten to the caller's requested name.
     pub model: String,
@@ -192,7 +193,7 @@ fn validate_choice(choice: &Value) -> Result<(), &'static str> {
 /// holding partial `delta` content instead of a complete `message`. The
 /// terminal `[DONE]` sentinel is not JSON and never deserializes into this
 /// type; the relay special-cases it before parsing.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct ChatChunk {
     /// The model name, rewritten to the caller's requested name.
     pub model: String,
@@ -227,7 +228,7 @@ impl ChatChunk {
 /// One partial choice in a [`ChatChunk`]: an `index` plus a `delta` holding
 /// the incremental payload (`role` on the first chunk, content or tool-call
 /// fragments thereafter).
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct ChatChunkChoice {
     /// The completion choice this delta belongs to.
     pub index: u32,

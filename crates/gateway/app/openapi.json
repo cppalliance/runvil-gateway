@@ -1,0 +1,2606 @@
+{
+  "components": {
+    "schemas": {
+      "CacheDeletedReply": {
+        "description": "The `DELETE /v1/cache/{sha256}` body: the removed digest.",
+        "properties": {
+          "sha256": {
+            "description": "The digest that was removed.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Always `deleted`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "status"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CacheDownloadEvent": {
+        "description": "A cache download's progress event: `bytes` so far and `total` when the\nupstream sent a content length, null when it did not.",
+        "properties": {
+          "bytes": {
+            "description": "Bytes written so far.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "description": "Always `downloading`.",
+            "type": "string"
+          },
+          "total": {
+            "description": "The upstream content length, or null when it sent none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "bytes",
+          "status",
+          "total"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CacheEntry": {
+        "description": "One entry of the cache listing: a blob plus the source it was fetched from.",
+        "properties": {
+          "path": {
+            "description": "Absolute path of the blob under the cache root.",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256 of the blob's bytes.",
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "Blob length in bytes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "description": "The URL the blob was downloaded from.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CacheErrorEvent": {
+        "description": "The stream's terminal failure event. The handler still builds it with\n`json!`; this type is the schema.",
+        "properties": {
+          "message": {
+            "description": "The failure, rendered for the client.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Always `error`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "status"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CacheReadyReply": {
+        "description": "A ready cache blob: the hit body and the stream's terminal `ready` event\nshare this shape. The handlers still build it with `json!`, because a\n`PathBuf` that is not valid UTF-8 panics inside `json!` and a typed reply\nwould answer an error instead. The type exists so the description's schema\ncomes from the same fields.",
+        "properties": {
+          "path": {
+            "description": "Absolute path of the cached blob.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Always `ready`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "status"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CacheRequest": {
+        "description": "The `POST /v1/cache` request body.",
+        "properties": {
+          "sha256": {
+            "description": "Optional SHA-256 pin, verified against the downloaded bytes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "The http(s) URL to download.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object",
+        "x-runvil-feature": "local"
+      },
+      "CatalogModelInfo": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ModelInfo",
+            "description": "Existing chat, embedding, classifier, or speech metadata."
+          },
+          {
+            "$ref": "#/components/schemas/SpeechCatalogModelInfo",
+            "description": "Generic transcription metadata.",
+            "x-runvil-feature": "stt"
+          }
+        ],
+        "description": "One routed inference model or active speech model."
+      },
+      "CatalogModelsResponse": {
+        "description": "The model-list wire response, including routed and active speech models.",
+        "properties": {
+          "data": {
+            "description": "Models currently accepting their respective request shape.",
+            "items": {
+              "$ref": "#/components/schemas/CatalogModelInfo"
+            },
+            "type": "array"
+          },
+          "object": {
+            "description": "Always `\"list\"`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ChatChunk": {
+        "additionalProperties": true,
+        "description": "One chunk of a streaming chat completion (OpenAI streaming shape).\n\nA `stream: true` completion arrives as a sequence of these chunks, each\nholding partial `delta` content instead of a complete `message`. The\nterminal `[DONE]` sentinel is not JSON and never deserializes into this\ntype; the relay special-cases it before parsing.",
+        "properties": {
+          "choices": {
+            "description": "The partial choices for this chunk.",
+            "items": {
+              "$ref": "#/components/schemas/ChatChunkChoice"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "choices"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "ChatChunkChoice": {
+        "additionalProperties": true,
+        "description": "One partial choice in a [`ChatChunk`]: an `index` plus a `delta` holding\nthe incremental payload (`role` on the first chunk, content or tool-call\nfragments thereafter).",
+        "properties": {
+          "delta": {
+            "description": "The incremental payload, kept as opaque JSON so every field the\ngateway does not route passes through untouched."
+          },
+          "index": {
+            "description": "The completion choice this delta belongs to.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "delta"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "ChatRequest": {
+        "additionalProperties": true,
+        "description": "An incoming chat completions request.",
+        "properties": {
+          "messages": {
+            "description": "The conversation messages, passed through to the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "stream": {
+            "description": "Whether the caller asked for a streaming (SSE) completion. Absent\nmeans non-streaming; an absent `stream` is never forwarded.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "ChatResponse": {
+        "additionalProperties": true,
+        "description": "An outgoing chat completions response.",
+        "properties": {
+          "choices": {
+            "description": "The completion choices, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "choices"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "EmbeddingInput": {
+        "anyOf": [
+          {
+            "description": "A single input string.",
+            "type": "string"
+          },
+          {
+            "description": "A batch of input strings.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ],
+        "description": "The text to embed: one string or a batch of strings (OpenAI shape)."
+      },
+      "EmbeddingRequest": {
+        "additionalProperties": true,
+        "description": "An incoming embeddings request.",
+        "properties": {
+          "encoding_format": {
+            "description": "The encoding format (`\"float\"` or `\"base64\"`); absent means the\nbackend's default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "$ref": "#/components/schemas/EmbeddingInput",
+            "description": "The text to embed."
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "EmbeddingResponse": {
+        "additionalProperties": true,
+        "description": "An outgoing embeddings response.",
+        "properties": {
+          "data": {
+            "description": "The embedding entries, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "data"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "description": "The OpenAI error envelope body for this error, shared by the JSON\nerror response and the mid-stream SSE error event.",
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message",
+              "type",
+              "code"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "HealthReply": {
+        "description": "The `GET /health` body: `status` is `serving` while the gateway answers.",
+        "properties": {
+          "status": {
+            "description": "`serving` while the gateway is answering requests.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "JsonTranscription": {
+        "description": "A basic OpenAI transcription response.",
+        "properties": {
+          "text": {
+            "description": "The decoded transcript.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object",
+        "x-runvil-feature": "stt"
+      },
+      "ModelInfo": {
+        "description": "One catalogued model, with Runvil extensions beside the OpenAI `id`.",
+        "properties": {
+          "adaptive_thinking": {
+            "default": false,
+            "description": "Whether the model adaptively chooses how much to think per request;\nchat kind only. Defaults to false.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "context": {
+            "description": "Context window size in tokens.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "default_effort": {
+            "description": "The effort level applied when the caller omits one; requires a\nnon-empty `effort_levels` and must name a listed level.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "default_temperature": {
+            "description": "Sampling temperature applied when the caller omits one.",
+            "format": "float",
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "description": {
+            "description": "Prose describing the model for catalog consumers and semantic bind.",
+            "type": "string",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "effort_levels": {
+            "default": [],
+            "description": "The reasoning-effort levels the model accepts. Empty means the model\nhas no effort knob.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "id": {
+            "description": "The caller-facing model name (`[[model]].name`).",
+            "type": "string"
+          },
+          "images": {
+            "default": false,
+            "description": "Whether the model accepts image inputs. Defaults to false; a\n`[local_model.multimodal_projector]` companion implies true.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ModelKind",
+            "description": "The workload this model serves (`\"chat\"`, `\"embedding\"`,\n`\"classifier\"`, `\"speech\"`, `\"transcription\"`, `\"image\"`,\n`\"video\"`).",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "max_output": {
+            "description": "Max output tokens the model can emit per completion. Must not exceed\n`context` when set.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "object": {
+            "description": "Always `\"model\"`.",
+            "type": "string"
+          },
+          "parallel_tool_calls": {
+            "default": false,
+            "description": "Whether the model can emit parallel tool calls. Defaults to false.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "provider": {
+            "description": "The model's provider id, such as `xai`. It describes the model, not\nthe endpoint the gateway reaches it through, and uses only lowercase\nletters, digits, `.`, `_`, and `-`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "thinking": {
+            "$ref": "#/components/schemas/ThinkingMode",
+            "description": "Whether thinking tokens are never, always, or switchably available.",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "voices": {
+            "default": [],
+            "description": "The voices the model offers for speech synthesis; speech kind only.\nEmpty means the model exposes no fixed voice list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "kind",
+          "description",
+          "context",
+          "thinking",
+          "images",
+          "parallel_tool_calls",
+          "effort_levels",
+          "adaptive_thinking",
+          "voices"
+        ],
+        "type": "object"
+      },
+      "ModelKind": {
+        "description": "The workload a model serves: chat completions, embeddings,\nclassification, speech synthesis, transcription, or image or video\ngeneration.\n\nThe kind scopes which configuration fields are meaningful: chat-only\nfields (for example `thinking`, `default_max_tokens`,\n`chat_template_file`) are rejected for non-chat kinds at validation,\nwhile `context` applies to every kind. The catalog includes the kind so\nclients can filter before building a request.",
+        "oneOf": [
+          {
+            "const": "chat",
+            "description": "Chat completions (`POST /v1/chat/completions`). The default.",
+            "type": "string"
+          },
+          {
+            "const": "embedding",
+            "description": "Text embeddings.",
+            "type": "string"
+          },
+          {
+            "const": "classifier",
+            "description": "Classification / reranking.",
+            "type": "string"
+          },
+          {
+            "const": "speech",
+            "description": "Speech synthesis (`POST /v1/audio/speech`).",
+            "type": "string"
+          },
+          {
+            "const": "transcription",
+            "description": "Speech-to-text transcription.",
+            "type": "string"
+          },
+          {
+            "const": "image",
+            "description": "Image generation.",
+            "type": "string"
+          },
+          {
+            "const": "video",
+            "description": "Video generation.",
+            "type": "string"
+          }
+        ]
+      },
+      "RerankRequest": {
+        "additionalProperties": true,
+        "description": "An incoming rerank request (the llama-server/vLLM/Jina shape: a query and\na document set in, ranked relevance scores out).",
+        "properties": {
+          "documents": {
+            "description": "The candidate documents to rank.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "query": {
+            "description": "The query each document is scored against.",
+            "type": "string"
+          },
+          "top_n": {
+            "description": "How many top-ranked results to return; absent means the backend's\ndefault.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "model",
+          "query",
+          "documents"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "RerankResponse": {
+        "additionalProperties": true,
+        "description": "An outgoing rerank response.",
+        "properties": {
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          },
+          "results": {
+            "description": "The ranked results, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "results"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "SearchResult": {
+        "description": "One search result, trimmed to the fields the executor needs.",
+        "properties": {
+          "age": {
+            "description": "The result's age, when the provider reports one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "description": "A short description or snippet.",
+            "type": "string"
+          },
+          "extra_snippets": {
+            "description": "Extra snippets from the provider, when present.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "site_name": {
+            "description": "Hostname derived from `url`, when parsing succeeds.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "The result's title.",
+            "type": "string"
+          },
+          "url": {
+            "description": "The result's URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "description"
+        ],
+        "type": "object",
+        "x-runvil-feature": "web-search"
+      },
+      "SpeechCatalogModelInfo": {
+        "description": "Speech metadata contains only fields meaningful to transcription clients.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "`transcription`.",
+            "type": "string",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "SpeechRequest": {
+        "additionalProperties": true,
+        "description": "An incoming speech synthesis request.",
+        "properties": {
+          "input": {
+            "description": "The text to synthesize, at most 4096 characters.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "instructions": {
+            "description": "Style-control instructions (the gpt-4o-mini-tts dialect's field);\nabsent means the backend's default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "response_format": {
+            "$ref": "#/components/schemas/SpeechResponseFormat",
+            "default": "mp3",
+            "description": "The requested audio encoding. An omitted field resolves to `mp3` at\ndeserialization, so the pin is structural and every forwarded body\nincludes it."
+          },
+          "speed": {
+            "description": "The playback speed (0.25 to 4.0); absent means the backend's default.",
+            "format": "float",
+            "maximum": 4.0,
+            "minimum": 0.25,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stream_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeechStreamFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The streaming framing selector; absent means chunked binary audio."
+          },
+          "voice": {
+            "$ref": "#/components/schemas/SpeechVoice",
+            "description": "The voice to synthesize with."
+          }
+        },
+        "required": [
+          "model",
+          "input",
+          "voice"
+        ],
+        "type": "object",
+        "x-runvil-pass-through": true
+      },
+      "SpeechResponseFormat": {
+        "description": "The audio encoding a speech response is requested in (the OpenAI set).\n\nThe set is closed on purpose: provider-only spellings (Together's `raw`\nand `mulaw`) stay unrepresentable until the enum is deliberately widened.",
+        "oneOf": [
+          {
+            "const": "mp3",
+            "description": "MPEG audio. The default: OpenAI defaults to mp3 while Together\ndefaults to wav, so the pin sits in the type and an omitted field\nresolves to mp3 at deserialization.",
+            "type": "string"
+          },
+          {
+            "const": "opus",
+            "description": "Opus in an Ogg container.",
+            "type": "string"
+          },
+          {
+            "const": "aac",
+            "description": "AAC in an ADTS container.",
+            "type": "string"
+          },
+          {
+            "const": "flac",
+            "description": "FLAC.",
+            "type": "string"
+          },
+          {
+            "const": "wav",
+            "description": "Uncompressed WAV.",
+            "type": "string"
+          },
+          {
+            "const": "pcm",
+            "description": "Raw 24 kHz 16-bit signed little-endian PCM.",
+            "type": "string"
+          }
+        ]
+      },
+      "SpeechStreamFormat": {
+        "description": "How a streaming speech response is framed (the OpenAI set).",
+        "oneOf": [
+          {
+            "const": "audio",
+            "description": "Chunked binary audio (the behavior when the field is absent).",
+            "type": "string"
+          },
+          {
+            "const": "sse",
+            "description": "Server-sent events containing base64-encoded audio.",
+            "type": "string"
+          }
+        ]
+      },
+      "SpeechVoice": {
+        "anyOf": [
+          {
+            "description": "A plain voice name.",
+            "type": "string"
+          },
+          {
+            "description": "The OpenAI object form, with the voice under `id`.",
+            "properties": {
+              "id": {
+                "description": "The voice identifier.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "The voice to synthesize with: a plain name or the OpenAI object form\n(`{\"id\": \"...\"}`). Membership in a model's catalog is checked at the\nroute, never here, because voice sets are per-checkpoint."
+      },
+      "ThinkingMode": {
+        "description": "How a model exposes chain-of-thought / thinking tokens to callers.\n\nCatalogued on each `[[model]]` so a Host can filter bindings before a\nrequest is built. `never` and `always` mean the backend ignores a\nper-call switch; `switchable` means the client may emit\n`chat_template_kwargs.enable_thinking`.",
+        "oneOf": [
+          {
+            "const": "never",
+            "description": "The backend never emits thinking tokens; a per-call switch is ignored.",
+            "type": "string"
+          },
+          {
+            "const": "always",
+            "description": "The backend always emits thinking tokens; a per-call switch is ignored.",
+            "type": "string"
+          },
+          {
+            "const": "switchable",
+            "description": "The client may turn thinking on or off per request.",
+            "type": "string"
+          }
+        ]
+      },
+      "TranscriptionResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JsonTranscription",
+            "description": "The compact `json` response."
+          },
+          {
+            "$ref": "#/components/schemas/VerboseJsonTranscription",
+            "description": "The `verbose_json` response."
+          }
+        ],
+        "description": "A successful transcription in the requested OpenAI JSON dialect.",
+        "x-runvil-feature": "stt"
+      },
+      "TranscriptionSegment": {
+        "description": "One clip-level segment in a verbose transcription response.",
+        "properties": {
+          "end": {
+            "description": "Segment end in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "description": "Zero-based segment identifier.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "description": "Segment start in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "text": {
+            "description": "Text decoded for the segment.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text"
+        ],
+        "type": "object",
+        "x-runvil-feature": "stt"
+      },
+      "VerboseJsonTranscription": {
+        "description": "An OpenAI verbose transcription response.",
+        "properties": {
+          "duration": {
+            "description": "Audio duration in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "language": {
+            "description": "The transcription language, always `en`.",
+            "type": "string"
+          },
+          "segments": {
+            "description": "One segment that spans the whole clip, from 0 to `duration`, whatever\n`timestamp_granularities[]` asked for.",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptionSegment"
+            },
+            "type": "array"
+          },
+          "task": {
+            "description": "Requested task name.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The decoded transcript.",
+            "type": "string"
+          },
+          "words": {
+            "description": "Always empty: this route returns no word timestamps, even when `word`\ngranularity is requested.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "task",
+          "language",
+          "duration",
+          "text",
+          "segments",
+          "words"
+        ],
+        "type": "object",
+        "x-runvil-feature": "stt"
+      },
+      "Voice": {
+        "description": "One voice in the `GET /v1/audio/voices` body.\n\n`name` mirrors `id`: the catalog configures voices as bare strings with\nno separate display name.",
+        "properties": {
+          "id": {
+            "description": "The voice identifier clients send as `voice`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The display name. It mirrors `id`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "VoicesReply": {
+        "description": "The `GET /v1/audio/voices` body: the deduplicated, sorted voices under\n`voices`.",
+        "properties": {
+          "voices": {
+            "description": "The active profile's speech voices.",
+            "items": {
+              "$ref": "#/components/schemas/Voice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "voices"
+        ],
+        "type": "object"
+      },
+      "WebSearchRequest": {
+        "additionalProperties": false,
+        "description": "The request body for `POST /v1/tools/web_search`.",
+        "properties": {
+          "count": {
+            "default": null,
+            "description": "The desired number of results. Defaults to\n[`WebSearchConfig::default_count`] and is clamped to\n[`WebSearchConfig::max_count`].",
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "country": {
+            "default": null,
+            "description": "Country code; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exclude_domains": {
+            "default": [],
+            "description": "Hostname exclude filter; empty means no exclude filter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "freshness": {
+            "default": null,
+            "description": "Freshness filter; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_domains": {
+            "default": [],
+            "description": "Hostname include filter; empty means no include filter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "query": {
+            "description": "The search query.",
+            "type": "string"
+          },
+          "safesearch": {
+            "default": null,
+            "description": "SafeSearch level; falls back to settings when omitted or empty.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search_lang": {
+            "default": null,
+            "description": "Search language; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object",
+        "x-runvil-feature": "web-search"
+      },
+      "WebSearchResponse": {
+        "description": "The response body for `POST /v1/tools/web_search`.",
+        "properties": {
+          "query": {
+            "description": "The trimmed request query that produced these results.",
+            "type": "string"
+          },
+          "results": {
+            "description": "The trimmed search results.",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "type": "object",
+        "x-runvil-feature": "web-search"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "Admits the caller when one of three rules holds, checked in this order: an\n`Authorization: Bearer` token equal to the gateway's current key; the\n`runvil-gateway-session` cookie from the `/auth` browser handoff, on a\nrequest whose `Sec-Fetch-Site` is `same-origin` or `none`; or, while\n`[server] trust_loopback` is on (the default), a request from a loopback\npeer that sends no `Authorization` header and no `Sec-Fetch-Site` other\nthan `same-origin` or `none`.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "sessionCookie": {
+        "description": "The cookie holding the session proof for browser sessions.",
+        "in": "cookie",
+        "name": "runvil-gateway-session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The gateway serves an API that other programs already know how to call. Each route follows the industry standard it is modeled on, where one exists, so a program written against that standard works against the gateway, and a client written against the gateway works against any server that implements the standard.",
+    "license": {
+      "identifier": "BSL-1.0",
+      "name": "BSL-1.0"
+    },
+    "title": "Runvil Gateway",
+    "version": "0.3.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe: answers 200 with `status` set to `serving` and needs no\ncredential. Like every route, it answers 403 while the gateway is bound to\na loopback address and the request's host is neither that address nor\n`localhost` on the same port.",
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReply"
+                }
+              }
+            },
+            "description": "Liveness probe: answers 200 with `status` set to `serving` and needs no\ncredential. Like every route, it answers 403 while the gateway is bound to\na loopback address and the request's host is neither that address nor\n`localhost` on the same port."
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          }
+        },
+        "security": [],
+        "tags": [
+          "health"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/health.rs#health"
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "description": "The speech route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"speech\"` models.\n\nTwo deliberate departures from the other routes. First, auth runs before\nbody extraction: the handler takes the [`AuthedCaller`] parts extractor,\nwhich runs the auth rules while the parts are extracted, and only then\nextracts `WireJson<SpeechRequest>` from the raw [`Request`] by hand, so\nan unauthorized caller never makes the gateway parse a body. Second, the\nreply is a byte passthrough, not a typed relay: audio frames are opaque\nbytes the gateway cannot re-validate per chunk, so the upstream body is\nforwarded unread - the one departure from the gateway's typed-relay\nnorm, the same trade [`crate::relay::relay_sse`] documents for its own\ndesign. Because the response is a long-lived byte stream, this route\nmust never sit under a `CompressionLayer` or a whole-request\n`TimeoutLayer`: both buffer or kill long-lived streams. The stream runs\nunder the bounded background relay [`relay_audio`] documents, so every\nearly end - a tripped bound or an upstream failure - fails the client's\nbody read rather than truncating it.",
+        "operationId": "post_v1_audio_speech",
+        "parameters": [
+          {
+            "description": "A bounded scheduling identity parsed from the client header.\n\nCallers name themselves via `X-Runvil-Client` for fair queueing. The\nvalue is parsed at the boundary into a bounded id (max length, restricted\ncharset); anything missing, empty, oversized, or containing other characters\nmaps to the single documented `default` bucket so an authenticated caller\ncannot mint unbounded, attacker-chosen scheduler identities.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": " Callers name themselves via `X-Runvil-Client` for fair queueing."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "audio/aac": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "audio/flac": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "audio/ogg": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "audio/pcm": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "audio/wav": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-events": "Re-emits an upstream audio byte stream as the response body, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is untyped on purpose: audio frames are opaque bytes, so the\nchunks pass through unread rather than being validated and re-serialized\nthe way [`crate::relay::relay_sse`] re-emits chat chunks. The response\nforwards the upstream `Content-Type` when present and otherwise falls\nback to the requested format's MIME mapping (or `text/event-stream`\nwhen the framing selector is `sse`); `Content-Length` is never set, so\nhyper emits `Transfer-Encoding: chunked`.\n\nThe forwarding runs in a spawned task that owns the upstream body and\nthe permit, feeding a small bounded channel the HTTP body consumes, so\nthe permit's lifetime never depends on downstream polling. Four named\nbounds cap the stream: [`SPEECH_RELAY_TOTAL_LIFETIME`],\n[`SPEECH_RELAY_BYTE_CEILING`], [`SPEECH_RELAY_UPSTREAM_IDLE`], and\n[`SPEECH_RELAY_DOWNSTREAM_BLOCKED`].\n\nNo error envelope can follow 200 plus audio bytes, so every terminal\npath - a bound tripped, an upstream body error, the downstream gone -\nemits exactly one `Err` item into the channel, then drops the permit:\nthe client's body read fails rather than seeing a clean EOF, the same\nfail-rather-than-truncate trade [`crate::relay::relay_sse`] makes with\nits mid-stream error envelope. Over the wire a body-stream error aborts\nthe response, so the item's message is server-side diagnostics; the\nclient observes a failed read. Only a stream that ran to a clean\nupstream end inside every bound ends the body without an error item."
+              }
+            },
+            "description": "The speech route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"speech\"` models.\n\nTwo deliberate departures from the other routes. First, auth runs before\nbody extraction: the handler takes the [`AuthedCaller`] parts extractor,\nwhich runs the auth rules while the parts are extracted, and only then\nextracts `WireJson<SpeechRequest>` from the raw [`Request`] by hand, so\nan unauthorized caller never makes the gateway parse a body. Second, the\nreply is a byte passthrough, not a typed relay: audio frames are opaque\nbytes the gateway cannot re-validate per chunk, so the upstream body is\nforwarded unread - the one departure from the gateway's typed-relay\nnorm, the same trade [`crate::relay::relay_sse`] documents for its own\ndesign. Because the response is a long-lived byte stream, this route\nmust never sit under a `CompressionLayer` or a whole-request\n`TimeoutLayer`: both buffer or kill long-lived streams. The stream runs\nunder the bounded background relay [`relay_audio`] documents, so every\nearly end - a tripped bound or an upstream failure - fails the client's\nbody read rather than truncating it."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.\n\nThe speech request's `voice` is not one of the model's catalog\nvoices. Checked at the route before queue admission, so the 400\nnever burns a queue slot; the message names the valid voices.\n\nThe route's workload does not match the model's configured kind\n(e.g. an embedding model named on the chat route).\n\nThe resolved model's upstream cannot serve the route's workload (for\nexample a local chat server asked for embeddings). The kind matches,\nbut the backing upstream has no implementation for it.",
+            "x-runvil-error-codes": [
+              "invalid_voice",
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The queue's fail-fast `Reject` policy turned the request away at\ncapacity. Maps to 429 so an OpenAI client surfaces a retryable\nrate-limit error rather than a server failure.\n\nThe upstream provider rate-limited a speech request. Maps to 429 so\nan OpenAI client surfaces a retryable rate-limit error rather than\na server failure. Speech-only: every other route keeps the shared\n[`ProtocolError`] mapping, so their envelopes stay bit-identical.",
+            "x-runvil-error-codes": [
+              "queue_rejected",
+              "upstream_rate_limited"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached after the request may\nhave left the gateway (a mid-flight read or timeout failure). The\nprovider may have received and billed it, so it is not safe to\nretry blindly.\n\nThe connection to the upstream backend itself failed (refused,\nDNS, TLS handshake): the request never left the gateway, nothing\nwas billed, and a retry is safe.\n\nDistinct from [`ProtocolError::UpstreamTransport`], where the\nrequest may have reached the provider. A timeout is never connect:\nit may have reached the provider.\n\nThe upstream returned a success status but a body that could not be\ndecoded into the expected shape.\n\nDistinct from [`ProtocolError::UpstreamTransport`] so a decode failure\n(a protocol problem) never masquerades as a transport death and triggers\na spurious local `llama-server` respawn (UP-004, UPSTREAM-003). The cause\nis preserved via `source()`.\n\nThe upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model belongs to the boot profile and its child is\nspawning: the remote models already serve, and this one follows\nonce its child is ready. Maps to 503 with `Retry-After` so a client\nwaits briefly instead of treating the model as missing.\n\nThe named model is configured but not yet loaded, and a queue command\n(named in the message) is working on the routing table. Maps to 503\nso a client can retry once the active command completes.\n\nThe endpoint's waiting queue is full.\n\nThe upstream provider was unavailable for a speech request. Maps to\n503 so a client can retry, rather than the shared mapping's 502.\nSpeech-only for the same reason as [`GatewayError::UpstreamRateLimited`].",
+            "headers": {
+              "Retry-After": {
+                "description": "The `Retry-After` a loading model's 503 sets, in seconds: long enough\nthat a polling client does not hammer the gateway while a child loads\nits weights, short enough that it notices the model within one poll of\nthe spawn completing.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full",
+              "upstream_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "speech"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/app/src/speech.rs#audio_speech",
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "description": "Transcribes one uploaded WAV clip with a loaded speech model, in the\nshape of OpenAI's transcription route. The reply is `{\"text\"}` by\ndefault, or the `verbose_json` object when `response_format` asks for it.",
+        "operationId": "post_v1_audio_transcriptions",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "The audio to transcribe, as a WAV file of 16 kHz mono samples. A\nfile over 25 MiB is refused with 413 while it is read, and any other\nformat, sample rate, or channel count is refused with 400.",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "Optional, and accepted only as `en`, the one language the\nspeech models transcribe. Any other value is refused with 400.",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "A speech model name that `GET /v1/models` lists: the configured\ninterim or final model, or `realtime-transcribe`, which decodes with the\nfinal model and exists only while one is configured.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Optional comma-separated terms the decoder is biased toward,\nread as a term list rather than OpenAI's free-text prompt. They follow the\nconfigured `[stt] vocabulary`, and empty terms are dropped. The decoder's\nprompt is limited, so terms that do not fit are dropped from the end: a\nlong list may be cut short, or dropped entirely.",
+                    "type": "string"
+                  },
+                  "response_format": {
+                    "description": "`json`, the default, for `{\"text\"}`, or `verbose_json`\nfor the text with its task, language, duration, and segments. Any other\nvalue, including OpenAI's `text`, `srt`, and `vtt`, is refused with 400.",
+                    "type": "string"
+                  },
+                  "temperature": {
+                    "description": "Validated, then not used. It must be a finite number of\nzero or more, or the request is refused with 400.",
+                    "type": "string"
+                  },
+                  "timestamp_granularities[]": {
+                    "description": "Repeatable, each value `word` or `segment`;\nany other value is refused with 400. A valid value changes nothing: a\n`verbose_json` reply always holds one segment for the whole clip and no\nword timestamps.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "model"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              }
+            },
+            "description": "Transcribes one uploaded WAV clip with a loaded speech model, in the\nshape of OpenAI's transcription route. The reply is `{\"text\"}` by\ndefault, or the `verbose_json` object when `response_format` asks for it."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not readable multipart form data, lacks\n`file` or `model`, holds a refused field value, or carries audio that is\nnot a 16 kHz mono WAV. A body larger than 26 MiB, the file limit plus\n1 MiB, also lands here unless the file passed its own limit first. The\n`message` begins `malformed request:` and then gives the reason, which is\ngeneric when reading the multipart body fails.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ],
+            "x-runvil-error-types": [
+              "invalid_request_error"
+            ],
+            "x-runvil-source": "crates/gateway/stt/api/src/batch.rs#error_response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`model` names no speech model the gateway serves right\nnow, which is every name while the speech models are not loaded.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ],
+            "x-runvil-error-types": [
+              "invalid_request_error"
+            ],
+            "x-runvil-source": "crates/gateway/stt/api/src/batch.rs#error_response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The `file` field passed 25 MiB.",
+            "x-runvil-error-codes": [
+              "file_too_large"
+            ],
+            "x-runvil-error-types": [
+              "invalid_request_error"
+            ],
+            "x-runvil-source": "crates/gateway/stt/api/src/batch.rs#error_response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Decoding failed after every check passed, which\nincludes a speech worker whose queue is full. The `message` is always\n`transcription failed`.",
+            "x-runvil-error-codes": [
+              "transcription_error"
+            ],
+            "x-runvil-error-types": [
+              "server_error"
+            ],
+            "x-runvil-source": "crates/gateway/stt/api/src/batch.rs#error_response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "stt"
+        ],
+        "x-runvil-feature": "stt",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/stt/api/src/batch.rs#handler",
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/audio/voices": {
+      "get": {
+        "description": "Bearer-authed union of the active profile's speech voices for catalog\nbind: every `kind = \"speech\"` model's configured `voices`, deduplicated\nand sorted, as id-first `{\"id\", \"name\"}` entries under\n`{\"voices\": [...]}`.\n\nOpenAI has no voice-list route; the OpenAI-compatible ecosystem\n(Kokoro-FastAPI, vLLM-Omni, Fish Audio) converged on this one, and\nclients such as Open WebUI read the `id` key, so the entry shape is a\ncompatibility surface pinned by the integration suite. `name` mirrors\n`id`: the catalog configures voices as bare strings with no separate\ndisplay name.",
+        "operationId": "get_v1_audio_voices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoicesReply"
+                }
+              }
+            },
+            "description": "Bearer-authed union of the active profile's speech voices for catalog\nbind: every `kind = \"speech\"` model's configured `voices`, deduplicated\nand sorted, as id-first `{\"id\", \"name\"}` entries under\n`{\"voices\": [...]}`.\n\nOpenAI has no voice-list route; the OpenAI-compatible ecosystem\n(Kokoro-FastAPI, vLLM-Omni, Fish Audio) converged on this one, and\nclients such as Open WebUI read the `id` key, so the entry shape is a\ncompatibility surface pinned by the integration suite. `name` mirrors\n`id`: the catalog configures voices as bare strings with no separate\ndisplay name."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "speech"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/speech.rs#audio_voices"
+      }
+    },
+    "/v1/cache": {
+      "get": {
+        "description": "`GET /v1/cache`: the sidecar-backed listing of cached blobs.\n\nReads `<file>.meta.json` sidecars only, so listing never re-hashes a blob\n(Amendment C); blobs without sidecars are not cache entries and do not\nappear.",
+        "operationId": "get_v1_cache",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CacheEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "`GET /v1/cache`: the sidecar-backed listing of cached blobs.\n\nReads `<file>.meta.json` sidecars only, so listing never re-hashes a blob\n(Amendment C); blobs without sidecars are not cache entries and do not\nappear."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A `/v1/cache` route failed at the storage or transport layer before its\nresponse was committed (mid-stream failures are SSE error events, not\nthis variant).\n\nA blocking-pool task the route dispatched through [`blocking`] did\nnot run to completion: it panicked, or the runtime is shutting down.\nNever the caller's fault, whatever the task was doing, so every\nroute maps a join failure here instead of choosing a domain variant.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/cache.rs#list_cache"
+      },
+      "post": {
+        "description": "`POST /v1/cache`: ensure the blob for `source` is cached.\n\nA cache hit (blob + sidecar present, pin matching when named) answers\nimmediately with JSON `{\"path\", \"status\": \"ready\"}`. A miss answers with\n`text/event-stream`: `{\"status\": \"downloading\", \"bytes\", \"total\"}`\nprogress events (`total` is null when the server sent no Content-Length),\nterminated by `{\"status\": \"ready\", \"path\"}` or, on failure,\n`{\"status\": \"error\", \"message\"}`.",
+        "operationId": "post_v1_cache",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheReadyReply"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-event-schemas": [
+                  "CacheDownloadEvent",
+                  "CacheReadyReply",
+                  "CacheErrorEvent"
+                ],
+                "x-runvil-events": "Builds the SSE response: each byte-count change re-emitted as the\n`{\"status\": \"downloading\", ...}` event the route has always emitted, then\nthe terminal event from the download task's join result, so the outcome\ncan never be lost.\n\nThe download task publishes every sample before it returns, so once the\njoin handle resolves the latest sample is already on the receiver and is\ndrained ahead of the terminal event. A client disconnect drops the\nresponse body and the receiver; the blocking download itself runs to\ncompletion (its staging cleanup still applies) and a later POST for the\nsame source then hits the cache."
+              }
+            },
+            "description": "`POST /v1/cache`: ensure the blob for `source` is cached.\n\nA cache hit (blob + sidecar present, pin matching when named) answers\nimmediately with JSON `{\"path\", \"status\": \"ready\"}`. A miss answers with\n`text/event-stream`: `{\"status\": \"downloading\", \"bytes\", \"total\"}`\nprogress events (`total` is null when the server sent no Content-Length),\nterminated by `{\"status\": \"ready\", \"path\"}` or, on failure,\n`{\"status\": \"error\", \"message\"}`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A `/v1/cache` route failed at the storage or transport layer before its\nresponse was committed (mid-stream failures are SSE error events, not\nthis variant).\n\nA blocking-pool task the route dispatched through [`blocking`] did\nnot run to completion: it panicked, or the runtime is shutting down.\nNever the caller's fault, whatever the task was doing, so every\nroute maps a join failure here instead of choosing a domain variant.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/cache.rs#post_cache"
+      }
+    },
+    "/v1/cache/{sha256}": {
+      "delete": {
+        "description": "`DELETE /v1/cache/{sha256}`: removes the blob and sidecar for a digest.\n\nAnswers 200 with `{\"status\": \"deleted\", \"sha256\"}` when an entry was\nremoved, 404 `cache_entry_not_found` when no sidecar records the digest,\nand 400 when the path parameter is not a 64-character hex digest.",
+        "operationId": "delete_v1_cache_sha256",
+        "parameters": [
+          {
+            "description": "The SHA-256 digest of the cached file, as `GET /v1/cache` lists\nit: 64 hexadecimal characters, in either case.",
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheDeletedReply"
+                }
+              }
+            },
+            "description": "`DELETE /v1/cache/{sha256}`: removes the blob and sidecar for a digest.\n\nAnswers 200 with `{\"status\": \"deleted\", \"sha256\"}` when an entry was\nremoved, 404 `cache_entry_not_found` when no sidecar records the digest,\nand 400 when the path parameter is not a 64-character hex digest."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`DELETE /v1/cache/{sha256}` named a digest that matches no cache\nentry.",
+            "x-runvil-error-codes": [
+              "cache_entry_not_found"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A `/v1/cache` route failed at the storage or transport layer before its\nresponse was committed (mid-stream failures are SSE error events, not\nthis variant).\n\nA blocking-pool task the route dispatched through [`blocking`] did\nnot run to completion: it panicked, or the runtime is shutting down.\nNever the caller's fault, whatever the task was doing, so every\nroute maps a join failure here instead of choosing a domain variant.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/cache.rs#delete_cache"
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "description": "The chat route to a backend.",
+        "operationId": "post_v1_chat_completions",
+        "parameters": [
+          {
+            "description": "A bounded scheduling identity parsed from the client header.\n\nCallers name themselves via `X-Runvil-Client` for fair queueing. The\nvalue is parsed at the boundary into a bounded id (max length, restricted\ncharset); anything missing, empty, oversized, or containing other characters\nmaps to the single documented `default` bucket so an authenticated caller\ncannot mint unbounded, attacker-chosen scheduler identities.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": " Callers name themselves via `X-Runvil-Client` for fair queueing."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-event-schemas": [
+                  "ChatChunk",
+                  "ErrorEnvelope"
+                ],
+                "x-runvil-events": "Re-emits a validated upstream chunk stream as an SSE response, holding the\ndominion queue permit for the stream's lifetime.\n\nThe relay is typed: each upstream chunk is validated and re-serialized per\nchunk rather than splicing upstream bytes through. A mid-stream failure is\nemitted as an error-envelope `data:` event before the stream ends, and a\nclean end is marked with the `data: [DONE]` sentinel. The response\nforwards the upstream `Content-Type`/`Cache-Control` when present,\ndefaulting to `text/event-stream`/`no-cache`.\n\nClient-disconnect cancellation is Drop all the way down: when the client\ngoes away the response body is dropped, which drops the chunk stream,\nwhich drops the upstream response and aborts the upstream connection,\nreleasing the permit in the same unwind. There is no explicit cancel path."
+              }
+            },
+            "description": "The chat route to a backend."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.\n\nThe route's workload does not match the model's configured kind\n(e.g. an embedding model named on the chat route).\n\nThe resolved model's upstream cannot serve the route's workload (for\nexample a local chat server asked for embeddings). The kind matches,\nbut the backing upstream has no implementation for it.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The queue's fail-fast `Reject` policy turned the request away at\ncapacity. Maps to 429 so an OpenAI client surfaces a retryable\nrate-limit error rather than a server failure.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached after the request may\nhave left the gateway (a mid-flight read or timeout failure). The\nprovider may have received and billed it, so it is not safe to\nretry blindly.\n\nThe connection to the upstream backend itself failed (refused,\nDNS, TLS handshake): the request never left the gateway, nothing\nwas billed, and a retry is safe.\n\nDistinct from [`ProtocolError::UpstreamTransport`], where the\nrequest may have reached the provider. A timeout is never connect:\nit may have reached the provider.\n\nThe upstream returned a success status but a body that could not be\ndecoded into the expected shape.\n\nDistinct from [`ProtocolError::UpstreamTransport`] so a decode failure\n(a protocol problem) never masquerades as a transport death and triggers\na spurious local `llama-server` respawn (UP-004, UPSTREAM-003). The cause\nis preserved via `source()`.\n\nThe upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model belongs to the boot profile and its child is\nspawning: the remote models already serve, and this one follows\nonce its child is ready. Maps to 503 with `Retry-After` so a client\nwaits briefly instead of treating the model as missing.\n\nThe named model is configured but not yet loaded, and a queue command\n(named in the message) is working on the routing table. Maps to 503\nso a client can retry once the active command completes.\n\nThe endpoint's waiting queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "The `Retry-After` a loading model's 503 sets, in seconds: long enough\nthat a polling client does not hammer the gateway while a child loads\nits weights, short enough that it notices the model within one poll of\nthe spawn completing.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-extension-fields": [
+          {
+            "description": "`gateway_warning` is a gateway-specific extension on the OpenAI response\nshape: when an emulated tool dialect recovers from a malformed tool fence,\nthe affected choice's message reports the reason under `gateway_warning`\nnext to its emptied `content`. Downstream serde ignores the unknown field.",
+            "name": "choices[].message.gateway_warning",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          }
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/app/src/relay.rs#chat_completions",
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "description": "The embeddings route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"embedding\"` models.",
+        "operationId": "post_v1_embeddings",
+        "parameters": [
+          {
+            "description": "A bounded scheduling identity parsed from the client header.\n\nCallers name themselves via `X-Runvil-Client` for fair queueing. The\nvalue is parsed at the boundary into a bounded id (max length, restricted\ncharset); anything missing, empty, oversized, or containing other characters\nmaps to the single documented `default` bucket so an authenticated caller\ncannot mint unbounded, attacker-chosen scheduler identities.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": " Callers name themselves via `X-Runvil-Client` for fair queueing."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingResponse"
+                }
+              }
+            },
+            "description": "The embeddings route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"embedding\"` models."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.\n\nThe route's workload does not match the model's configured kind\n(e.g. an embedding model named on the chat route).\n\nThe resolved model's upstream cannot serve the route's workload (for\nexample a local chat server asked for embeddings). The kind matches,\nbut the backing upstream has no implementation for it.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The queue's fail-fast `Reject` policy turned the request away at\ncapacity. Maps to 429 so an OpenAI client surfaces a retryable\nrate-limit error rather than a server failure.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached after the request may\nhave left the gateway (a mid-flight read or timeout failure). The\nprovider may have received and billed it, so it is not safe to\nretry blindly.\n\nThe connection to the upstream backend itself failed (refused,\nDNS, TLS handshake): the request never left the gateway, nothing\nwas billed, and a retry is safe.\n\nDistinct from [`ProtocolError::UpstreamTransport`], where the\nrequest may have reached the provider. A timeout is never connect:\nit may have reached the provider.\n\nThe upstream returned a success status but a body that could not be\ndecoded into the expected shape.\n\nDistinct from [`ProtocolError::UpstreamTransport`] so a decode failure\n(a protocol problem) never masquerades as a transport death and triggers\na spurious local `llama-server` respawn (UP-004, UPSTREAM-003). The cause\nis preserved via `source()`.\n\nThe upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model belongs to the boot profile and its child is\nspawning: the remote models already serve, and this one follows\nonce its child is ready. Maps to 503 with `Retry-After` so a client\nwaits briefly instead of treating the model as missing.\n\nThe named model is configured but not yet loaded, and a queue command\n(named in the message) is working on the routing table. Maps to 503\nso a client can retry once the active command completes.\n\nThe endpoint's waiting queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "The `Retry-After` a loading model's 503 sets, in seconds: long enough\nthat a polling client does not hammer the gateway while a child loads\nits weights, short enough that it notices the model within one poll of\nthe spawn completing.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/app/src/relay.rs#embeddings",
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "description": "Bearer-authed catalog of configured models for catalog bind.",
+        "operationId": "get_v1_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogModelsResponse"
+                }
+              }
+            },
+            "description": "Bearer-authed catalog of configured models for catalog bind."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "models"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/app/src/models.rs#list_models",
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/realtime": {
+      "get": {
+        "description": "Opens a realtime transcription session: a WebSocket handshake to\n`/v1/realtime?intent=transcription` that passes authentication and the\n`Origin` check upgrades to the session's event stream.",
+        "operationId": "get_v1_realtime",
+        "parameters": [
+          {
+            "description": "Validation of the realtime WebSocket upgrade query string.",
+            "in": "query",
+            "name": "intent",
+            "required": true,
+            "schema": {
+              "enum": [
+                "transcription"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "No body: the connection upgrades to a WebSocket of JSON text frames.\n\nClient events, `crates/gateway/stt/api/src/realtime/wire/client.rs`: Parsing of client JSON events into typed realtime commands.\n\nServer events, `crates/gateway/stt/api/src/realtime/wire/server.rs`: Server-to-client wire types for the realtime transcription protocol.",
+            "x-runvil-source": "crates/gateway/stt/api/src/realtime/route.rs#upgrade"
+          },
+          "400": {
+            "description": "No body when the query string is not exactly `intent=transcription`: the\nparameter is missing, empty, repeated, or joined by another one. A request\nwithout WebSocket upgrade headers gets 400 before the query is checked,\nwith a short text body.",
+            "x-runvil-source": "crates/gateway/stt/api/src/realtime/route.rs#upgrade"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.\n\nAuthenticates an STT route with [`check_auth`], then answers a realtime\nhandshake `403 Forbidden` with no body unless it carries at most one\n`Origin` header, readable as visible ASCII, that\n[`shared_loopback::gateway_loopback_origin_allowed`] admits.\n\nWhether a Gateway WebSocket Origin is allowed.\n\nAn absent Origin denotes a native client and is admitted. A browser Origin\nmust be an exact HTTP origin whose host is a loopback IP address or\n`localhost`. HTTPS, foreign hosts, paths, queries, and malformed authorities\nfail closed.",
+            "x-runvil-source": [
+              "crates/shared-loopback/src/host.rs#require_loopback_host",
+              "crates/gateway/app/src/auth.rs#authorize_stt_route"
+            ]
+          },
+          "429": {
+            "description": "No body when the gateway already has 8 realtime sessions open, its limit.",
+            "x-runvil-source": "crates/gateway/stt/api/src/realtime/route.rs#upgrade"
+          },
+          "503": {
+            "description": "No body when no speech runtime is loaded and accepting work, or the loaded one\nhas no final model, which a session needs.",
+            "x-runvil-source": "crates/gateway/stt/api/src/realtime/route.rs#upgrade"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "stt"
+        ],
+        "x-runvil-extension-fields": [
+          {
+            "description": "The hypothesis event shape a session negotiated through `session.include`.",
+            "name": "conversation.item.input_audio_transcription.hypothesis",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "The hypothesis event shape a session negotiated through `session.include`."
+          }
+        ],
+        "x-runvil-feature": "stt",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/stt/api/src/realtime/route.rs#upgrade",
+        "x-runvil-standard": "openai-realtime-transcription",
+        "x-runvil-websocket": true
+      }
+    },
+    "/v1/rerank": {
+      "post": {
+        "description": "The rerank route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"classifier\"` models.",
+        "operationId": "post_v1_rerank",
+        "parameters": [
+          {
+            "description": "A bounded scheduling identity parsed from the client header.\n\nCallers name themselves via `X-Runvil-Client` for fair queueing. The\nvalue is parsed at the boundary into a bounded id (max length, restricted\ncharset); anything missing, empty, oversized, or containing other characters\nmaps to the single documented `default` bucket so an authenticated caller\ncannot mint unbounded, attacker-chosen scheduler identities.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": " Callers name themselves via `X-Runvil-Client` for fair queueing."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerankRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RerankResponse"
+                }
+              }
+            },
+            "description": "The rerank route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"classifier\"` models."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.\n\nThe route's workload does not match the model's configured kind\n(e.g. an embedding model named on the chat route).\n\nThe resolved model's upstream cannot serve the route's workload (for\nexample a local chat server asked for embeddings). The kind matches,\nbut the backing upstream has no implementation for it.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The queue's fail-fast `Reject` policy turned the request away at\ncapacity. Maps to 429 so an OpenAI client surfaces a retryable\nrate-limit error rather than a server failure.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached after the request may\nhave left the gateway (a mid-flight read or timeout failure). The\nprovider may have received and billed it, so it is not safe to\nretry blindly.\n\nThe connection to the upstream backend itself failed (refused,\nDNS, TLS handshake): the request never left the gateway, nothing\nwas billed, and a retry is safe.\n\nDistinct from [`ProtocolError::UpstreamTransport`], where the\nrequest may have reached the provider. A timeout is never connect:\nit may have reached the provider.\n\nThe upstream returned a success status but a body that could not be\ndecoded into the expected shape.\n\nDistinct from [`ProtocolError::UpstreamTransport`] so a decode failure\n(a protocol problem) never masquerades as a transport death and triggers\na spurious local `llama-server` respawn (UP-004, UPSTREAM-003). The cause\nis preserved via `source()`.\n\nThe upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model belongs to the boot profile and its child is\nspawning: the remote models already serve, and this one follows\nonce its child is ready. Maps to 503 with `Retry-After` so a client\nwaits briefly instead of treating the model as missing.\n\nThe named model is configured but not yet loaded, and a queue command\n(named in the message) is working on the routing table. Maps to 503\nso a client can retry once the active command completes.\n\nThe endpoint's waiting queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "The `Retry-After` a loading model's 503 sets, in seconds: long enough\nthat a polling client does not hammer the gateway while a child loads\nits weights, short enough that it notices the model within one poll of\nthe spawn completing.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-source": "crates/gateway/app/src/relay.rs#rerank",
+        "x-runvil-standard": "jina-cohere-rerank"
+      }
+    },
+    "/v1/tools/web_search": {
+      "post": {
+        "description": "The `POST /v1/tools/web_search` route.\n\n# Errors\nReturns [`GatewayError::Unauthorized`] when the bearer token is absent or\nwrong, [`GatewayError::ToolNotConfigured`] when no `[tools.web_search]`\nsection is present, [`GatewayError::MalformedRequest`] when the request\nfails validation, and the upstream variants on a provider failure.",
+        "operationId": "post_v1_tools_web_search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSearchResponse"
+                }
+              }
+            },
+            "description": "The `POST /v1/tools/web_search` route.\n\n# Errors\nReturns [`GatewayError::Unauthorized`] when the bearer token is absent or\nwrong, [`GatewayError::ToolNotConfigured`] when no `[tools.web_search]`\nsection is present, [`GatewayError::MalformedRequest`] when the request\nfails validation, and the upstream variants on a provider failure."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body could not be understood.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Refuses any request whose authority is not the bound loopback socket\nwith `403 Forbidden`, applied through\n[`axum::middleware::from_fn_with_state`] with the bound address as the\nstate.\n\nThis is the DNS-rebinding sibling of\n[`require_loopback`](crate::require_loopback): a page on a\nrebound hostname reaches a loopback server with same-origin fetch\nmetadata, but its requests still have the attacker's name as the\nauthority, the one signal rebinding cannot forge. While the server is\nbound to a loopback address, the only admitted authorities are the\nsocket's literal form (`127.0.0.1:port` or `[::1]:port`) and\n`localhost:port` - plus the port-elided bare forms on a port-80 bind,\nsince http clients omit the default port. A server bound to a\nnon-loopback address has no\nloopback allowlist to enforce, so every request passes: the operator\nchose network exposure, and refusing non-loopback authorities would\nbreak the very clients that bind exists for.\n\nThe URI authority (HTTP/2, absolute-form) wins over the `Host` header.\nA request naming no authority at all fails closed with `403 Forbidden`:\nbrowsers, the application's HTTP clients, and the gateway-discovery-file\nhealth probe all send the bound address as `Host`, so an authority-less\nrequest is nothing the wall was built to admit. No route is exempt,\n`/health` included, which keeps the probe honest against the same check\na browser must pass.",
+            "x-runvil-source": "crates/shared-loopback/src/host.rs#require_loopback_host"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A tool endpoint was reached but the tool is not configured.",
+            "x-runvil-error-codes": [
+              "not_found"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached after the request may\nhave left the gateway (a mid-flight read or timeout failure). The\nprovider may have received and billed it, so it is not safe to\nretry blindly.\n\nThe connection to the upstream backend itself failed (refused,\nDNS, TLS handshake): the request never left the gateway, nothing\nwas billed, and a retry is safe.\n\nDistinct from [`ProtocolError::UpstreamTransport`], where the\nrequest may have reached the provider. A timeout is never connect:\nit may have reached the provider.\n\nThe upstream returned a success status but a body that could not be\ndecoded into the expected shape.\n\nDistinct from [`ProtocolError::UpstreamTransport`] so a decode failure\n(a protocol problem) never masquerades as a transport death and triggers\na spurious local `llama-server` respawn (UP-004, UPSTREAM-003). The cause\nis preserved via `source()`.\n\nThe upstream backend returned a non-success status.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "web_search"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "web-search",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false,
+        "x-runvil-source": "crates/gateway/app/src/web_search.rs#web_search"
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "The OpenAI passthrough surface: chat completions, embeddings, and\nrerank, plus the typed SSE relay and the live-table model resolver\nthey share.",
+      "name": "relay"
+    },
+    {
+      "description": "The speech surface: the `audio/speech` byte-passthrough relay with its\nbounded background forwarding task, the voices catalog, and the relay's\nnamed bounds.",
+      "name": "speech"
+    },
+    {
+      "description": "The model catalog surface: `GET /v1/models`, its wire shape, and the\ncapability-endpoint status entries the admin status readout renders.",
+      "name": "models"
+    },
+    {
+      "description": "The `GET /health` liveness probe.",
+      "name": "health"
+    },
+    {
+      "description": "The `POST /v1/tools/web_search` tool route: bearer-authed, delegates\nto the web-search service crate. Compiled only with the `web-search`\nfeature, since the route has nothing to delegate to without it.",
+      "name": "web_search"
+    },
+    {
+      "description": "The `/v1/cache` routes: bearer-authenticated on-demand blob downloads into\nthe operator cache, with sidecar-based listing and removal.",
+      "name": "cache"
+    },
+    {
+      "description": "Gateway-owned speech facade and HTTP endpoints.",
+      "name": "stt"
+    }
+  ]
+}

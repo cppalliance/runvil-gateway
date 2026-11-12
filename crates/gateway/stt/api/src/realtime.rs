@@ -17,5 +17,6 @@ pub(crate) use registry::SessionRegistry;
 pub(crate) use result_mailbox::ItemResult;
 #[cfg(feature = "test-fixtures")]
 pub(crate) use route::ForcedPrecommitFailure;
+pub use route::REALTIME_PATH;
 pub(crate) use route::{RoutePolicy, routes};
 pub(crate) use session::Session;

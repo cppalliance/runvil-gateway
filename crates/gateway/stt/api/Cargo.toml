@@ -19,6 +19,7 @@ gateway-local.workspace = true
 gateway-progress.workspace = true
 gateway-stt-backend-whisper.workspace = true
 gateway-stt-engine.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

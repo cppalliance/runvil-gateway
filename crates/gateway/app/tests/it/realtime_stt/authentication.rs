@@ -80,6 +80,24 @@ async fn gateway_auth_origin_query_and_final_speech_surfaces_precede_upgrade() {
     assert_final_speech_route_surface(&http, strict.addr).await;
     strict.shutdown().await;
 
+    // Every status above is one the committed OpenAPI document lists, and its
+    // 403 names the Origin refusal beside the host wall.
+    let documented = documented_responses("/v1/realtime", "get");
+    for status in ["101", "400", "401", "403"] {
+        assert!(
+            documented.contains_key(status),
+            "openapi.json lists no {status} for GET /v1/realtime, which this test produced"
+        );
+    }
+    assert!(
+        documented["403"]["x-runvil-source"]
+            .as_array()
+            .is_some_and(|sources| sources
+                .iter()
+                .any(|source| source == "crates/gateway/app/src/auth.rs#authorize_stt_route")),
+        "openapi.json's 403 for GET /v1/realtime omits the Origin refusal"
+    );
+
     // The strict server's stop retired its speech service.
     let trusted_service = speech(&ScriptedDecoder::new(), Some(&ScriptedDecoder::new()));
     let trusted = server(false, &trusted_service).await;

@@ -21,7 +21,9 @@ mod test_fixtures;
 pub mod test_fixtures;
 
 pub use artifacts::SpeechError;
+pub use batch::{TRANSCRIPTIONS_PATH, transcription_response_schema};
 pub use model::SpeechModelInfo;
+pub use realtime::REALTIME_PATH;
 pub use service::SpeechService;
 pub use status::SpeechStatus;
 

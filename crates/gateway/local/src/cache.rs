@@ -16,6 +16,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::artifacts::{
@@ -87,7 +88,7 @@ pub(crate) fn write_blob_meta(
 }
 
 /// One entry of the cache listing: a blob plus the source it was fetched from.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, JsonSchema, Serialize, PartialEq, Eq)]
 pub struct CacheEntry {
     /// The URL the blob was downloaded from.
     pub source: String,

@@ -4,7 +4,7 @@
 use serde_json::Value;
 
 use super::{CANNED_AUDIO, bytes_within, recording_speech_backend, speech_body, speech_gateway};
-use crate::support::send_within;
+use crate::support::{documented_responses, send_within};
 
 /// IT-005/006 for the speech route: the backend records the request, so we
 /// assert exactly what the gateway forwarded - method, path, the rewritten
@@ -112,6 +112,7 @@ async fn content_type_falls_back_to_the_format_mime_mapping() {
             Some(mime),
             "format {format} falls back to its MIME type"
         );
+        assert_documented(mime);
     }
     gateway.shutdown().await;
 }
@@ -176,6 +177,7 @@ async fn sse_framing_falls_back_to_event_stream_when_content_type_is_missing() {
         Some("text/event-stream"),
         "the fallback takes the framing selector, never an audio type"
     );
+    assert_documented("text/event-stream");
     gateway.shutdown().await;
 }
 
@@ -208,4 +210,18 @@ async fn sse_framing_still_forwards_a_present_upstream_content_type() {
         "a present upstream content type wins over the framing fallback"
     );
     gateway.shutdown().await;
+}
+
+/// Fails unless the committed OpenAPI document lists `mime` among the media
+/// types of a 200 speech response.
+fn assert_documented(mime: &str) {
+    let responses = documented_responses("/v1/audio/speech", "post");
+    let media = responses["200"]["content"]
+        .as_object()
+        .expect("openapi.json's speech 200 response has content");
+    assert!(
+        media.contains_key(mime),
+        "openapi.json's speech 200 response lists no {mime}: {:?}",
+        media.keys().collect::<Vec<_>>()
+    );
 }

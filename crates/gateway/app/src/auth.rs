@@ -161,7 +161,13 @@ mod secret_tests;
 #[cfg(test)]
 mod loopback_caller_tests;
 
-/// Authenticates the caller by any one of three rules, in this order.
+/// Admits the caller when one of three rules holds, checked in this order: an
+/// `Authorization: Bearer` token equal to the gateway's current key; the
+/// `runvil-gateway-session` cookie from the `/auth` browser handoff, on a
+/// request whose `Sec-Fetch-Site` is `same-origin` or `none`; or, while
+/// `[server] trust_loopback` is on (the default), a request from a loopback
+/// peer that sends no `Authorization` header and no `Sec-Fetch-Site` other
+/// than `same-origin` or `none`.
 ///
 /// 1. A presented bearer token equals the live key.
 /// 2. The `/auth` browser handoff's cookie verifies: the cookie is the
@@ -227,6 +233,10 @@ pub(crate) fn secret_eq(presented: &[u8], configured: &[u8]) -> bool {
     presented.ct_eq(&configured).into()
 }
 
+/// Authenticates an STT route with [`check_auth`], then answers a realtime
+/// handshake `403 Forbidden` with no body unless it carries at most one
+/// `Origin` header, readable as visible ASCII, that
+/// [`shared_loopback::gateway_loopback_origin_allowed`] admits.
 #[cfg(feature = "stt")]
 pub(crate) async fn authorize_stt_route(
     State(state): State<AppState>,
@@ -235,7 +245,9 @@ pub(crate) async fn authorize_stt_route(
     next: axum::middleware::Next,
 ) -> Result<Response, GatewayError> {
     check_auth(&state, &caller).await?;
-    if request.uri().path() == "/v1/realtime" && !gateway_realtime_origin_allowed(&request) {
+    if request.uri().path() == gateway_stt::REALTIME_PATH
+        && !gateway_realtime_origin_allowed(&request)
+    {
         return Ok(axum::http::StatusCode::FORBIDDEN.into_response());
     }
     Ok(next.run(request).await)

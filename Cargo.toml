@@ -130,6 +130,9 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "que
 # embeds it into the binary in release builds. interpolate-folder-path
 # resolves the $OUT_DIR prefix in the `folder` attribute.
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+# Validates the generated OpenAPI document. default-features off keeps the
+# crate from fetching a schema over HTTP; the OAS schemas are vendored.
+jsonschema = { version = "0.61", default-features = false }
 # Derives the committed JSON Schema of the model sheet from the serde types.
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
