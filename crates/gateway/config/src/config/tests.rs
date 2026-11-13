@@ -113,7 +113,7 @@ endpoints = ["e"]
 "#;
     assert!(matches!(
         Config::parse_toml(toml),
-        Err(ConfigError::Validation(_))
+        Err(ConfigError::Validation(message)) if message.contains("server.api_key")
     ));
 }
 

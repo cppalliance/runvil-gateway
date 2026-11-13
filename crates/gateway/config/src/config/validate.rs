@@ -64,7 +64,7 @@ impl Config {
         }
         if self.server.api_key.is_empty() {
             return Err(ConfigError::Validation(
-                "server.key must not be empty".to_string(),
+                "server.api_key must not be empty".to_string(),
             ));
         }
         self.validate_dominions()?;
