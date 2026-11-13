@@ -37,9 +37,13 @@ Every route except `/health` is authenticated by default. A loopback caller is t
 
 ## Install
 
-There are no published releases yet, so there is nothing to download or install from a URL today. Build from source instead.
+Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/cppalliance/runvil-gateway/releases). On macOS and Linux the shell installer from the latest release installs the binary:
 
-You need Rust, and Node.js 22 for the settings page bundle. The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) and rustup installs it on the first cargo call.
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cppalliance/runvil-gateway/releases/latest/download/gateway-installer.sh | sh
+```
+
+Or build from source. You need Rust, and Node.js 22 for the settings page bundle. The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) and rustup installs it on the first cargo call.
 
 ```sh
 git clone https://github.com/cppalliance/runvil-gateway
