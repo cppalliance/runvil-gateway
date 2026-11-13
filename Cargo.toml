@@ -51,6 +51,9 @@ gateway-web-search = { path = "crates/gateway/web-search" }
 gateway-whisper-ffi = { path = "crates/gateway/stt/whisper-ffi" }
 # WAV parsing for STT uploads and transcription test fixtures.
 hound = "3.5"
+# Validates the generated OpenAPI document. default-features off keeps the
+# crate from fetching a schema over HTTP; the OAS schemas are vendored.
+jsonschema = { version = "0.61", default-features = false }
 # The Linux tray backend: a pure StatusNotifierItem over D-Bus, no GTK.
 # default-features off drops ksni's tokio feature; async-io runs the service
 # on ksni's own executor thread, so the tray never depends on which runtime
@@ -178,6 +181,10 @@ tray-icon = "0.24.1"
 # C build in a serve path), and `fts` is unused.
 turso = { version = "=0.7.2", default-features = false }
 url = "2"
+# The OpenAPI description: `ToSchema` on the wire types and `utoipa::path` on
+# the handlers. The default `macros` feature is the derive crate, and the
+# model does not build without it.
+utoipa = "6"
 windows-sys = { version = "0.61", default-features = false }
 # The session-bus probes beside ksni (watcher presence, the first-run
 # notification); the same zbus major ksni builds on, on the same async-io

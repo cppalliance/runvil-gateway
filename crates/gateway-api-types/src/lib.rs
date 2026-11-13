@@ -6,7 +6,9 @@
 //!
 //! This crate is pure vocabulary: besides `serde` and `time` it depends only
 //! on `schemars`, which derives the committed JSON Schema of the sheet, and
-//! on no other workspace crate, so every product crate may depend on it.
+//! on `utoipa`, which derives the model metadata's part of the Gateway's
+//! OpenAPI description, and on no other workspace crate, so every product
+//! crate may depend on it.
 
 use std::collections::BTreeMap;
 

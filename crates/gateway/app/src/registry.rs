@@ -2,13 +2,15 @@
 //! mounts it.
 //!
 //! Each area module declares one [`RouteInfo`] constant per route and
-//! binds `INFO.path` in its `routes()`, never a literal, so the registry
-//! and the router cannot name different paths. [`all`] collects every
-//! area's `ROUTES` under the same feature gates `build_router` merges them
-//! under. The registry is the crate's one enumerable route list: the
-//! tests sweep it to prove every walled route refuses a LAN peer and every
-//! open route does not, and a route declared in the wrong tier fails that
-//! sweep rather than a reader's memory.
+//! binds that constant's path in its `routes()`, never a separate literal,
+//! so the registry and the router cannot name different paths. The speech
+//! crate's two routes and the config UI's asset routes are mounted by
+//! those crates; [`all`] names them from the path constants those crates
+//! export, under the same feature gates `build_router` merges them under.
+//! The registry is the crate's one enumerable route list: the tests sweep
+//! it to prove every walled route refuses a LAN peer and every open route
+//! does not, and a route declared in the wrong tier fails that sweep
+//! rather than a reader's memory.
 
 use axum::http::Method;
 
@@ -62,6 +64,28 @@ impl RouteInfo {
     }
 }
 
+/// The config UI assets, mounted at `/config` behind that crate's own
+/// loopback wall. Each path is that mount joined to one of
+/// `gateway_config_ui::ASSET_PATHS`, and `registry-tests` fails when the
+/// two disagree.
+#[cfg(feature = "config-ui")]
+const CONFIG_UI_ROUTES: &[RouteInfo] = &[
+    RouteInfo::walled("/config/", &[Method::GET]),
+    RouteInfo::walled("/config/app.js", &[Method::GET]),
+    RouteInfo::walled("/config/app.css", &[Method::GET]),
+    RouteInfo::walled("/config/icons/runvil-icon.png", &[Method::GET]),
+    RouteInfo::walled("/config/icons/runvil-icon@2x.png", &[Method::GET]),
+];
+
+/// The speech crate's routes. `build_router` merges them after
+/// `with_state`, because they carry that crate's state rather than
+/// `AppState`. The registry names the same path constants the crate binds.
+#[cfg(feature = "stt")]
+const TRANSCRIPTIONS: RouteInfo =
+    RouteInfo::open(gateway_stt::TRANSCRIPTIONS_PATH, &[Method::POST]);
+#[cfg(feature = "stt")]
+const REALTIME: RouteInfo = RouteInfo::open(gateway_stt::REALTIME_PATH, &[Method::GET]);
+
 /// Every route the assembled router mounts in this build, in mount order.
 pub(crate) fn all() -> Vec<RouteInfo> {
     let mut routes = Vec::new();
@@ -75,6 +99,12 @@ pub(crate) fn all() -> Vec<RouteInfo> {
     #[cfg(feature = "local")]
     routes.extend_from_slice(cache::ROUTES);
     routes.extend(admin::walled::registry());
+    // The config UI nest and the speech merge follow the walled tier in
+    // `build_router`, and the registry keeps that order.
+    #[cfg(feature = "config-ui")]
+    routes.extend_from_slice(CONFIG_UI_ROUTES);
+    #[cfg(feature = "stt")]
+    routes.extend_from_slice(&[TRANSCRIPTIONS, REALTIME]);
     routes
 }
 

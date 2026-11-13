@@ -21,9 +21,17 @@ mod test_fixtures;
 pub mod test_fixtures;
 
 pub use artifacts::SpeechError;
+pub use batch::TRANSCRIPTIONS_PATH;
 pub use model::SpeechModelInfo;
+pub use realtime::REALTIME_PATH;
 pub use service::SpeechService;
 pub use status::SpeechStatus;
+
+/// The OpenAPI description of the two speech routes, which the Gateway
+/// merges into its own document.
+#[derive(Debug, utoipa::OpenApi)]
+#[openapi(paths(batch::handler, realtime::route::upgrade))]
+pub struct SpeechApi;
 
 #[cfg(all(test, miri))]
 mod miri_tests {

@@ -14,11 +14,12 @@ use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::StreamExt as _;
+use gateway_protocol::wire::ErrorEnvelope;
 
 use super::Session;
 #[cfg(feature = "test-fixtures")]
 use super::item::FinalizationError;
-use super::query;
+use super::query::{self, RealtimeIntent};
 use super::registry::{RegisterError, SessionRegistry};
 use super::result_mailbox::MailboxError;
 use super::session::SessionError;
@@ -26,6 +27,11 @@ use super::wire::{ClientError, ClientEvent, ServerEvent, parse_client_event};
 use crate::audio::AudioError;
 use crate::generation::{GenerationLease, GenerationState};
 use crate::take::TakeFailure;
+
+#[path = "route-errors.rs"]
+mod errors;
+
+use errors::session_error;
 
 const SEND_DEADLINE: Duration = Duration::from_millis(500);
 
@@ -113,13 +119,16 @@ impl RoutePolicy {
     }
 }
 
+/// The realtime transcription route's path.
+pub const REALTIME_PATH: &str = "/v1/realtime";
+
 pub(crate) fn routes(
     generation: GenerationState,
     sessions: SessionRegistry,
     policy: RoutePolicy,
 ) -> Router {
     Router::new()
-        .route("/v1/realtime", get(upgrade))
+        .route(REALTIME_PATH, get(upgrade))
         .with_state(RouteState {
             generation,
             sessions,
@@ -127,6 +136,44 @@ pub(crate) fn routes(
         })
 }
 
+/// Opens a realtime transcription session: a WebSocket handshake to
+/// `/v1/realtime?intent=transcription` that passes authentication and the
+/// `Origin` check upgrades to the session's event stream.
+///
+/// After the upgrade the socket carries OpenAI Realtime transcription events
+/// as JSON text frames. OpenAPI does not describe WebSocket messages; the
+/// client events are parsed in `crates/gateway/stt/api/src/realtime/wire/client.rs`
+/// and the server events are written in
+/// `crates/gateway/stt/api/src/realtime/wire/server.rs`.
+#[utoipa::path(
+    get,
+    path = REALTIME_PATH,
+    operation_id = "get_v1_realtime",
+    tag = "stt",
+    params(
+        ("intent" = inline(RealtimeIntent), Query, description = "Must be exactly `intent=transcription`: a missing, empty, repeated, or extra parameter is refused with 400."),
+    ),
+    responses(
+        (status = 101, description = "No body. The connection upgrades to a WebSocket of JSON text frames."),
+        (status = 400, description = "No body when the query string is not exactly `intent=transcription`. A request without WebSocket upgrade headers gets 400 from axum before the query is checked, with a short text body."),
+        (status = 401, description = "The Gateway's auth layer refused the caller: the bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket, or the `Origin` check refused the page that opened the socket."),
+        (status = 429, description = "No body when the gateway already has 8 realtime sessions open, its limit."),
+        (status = 503, description = "No body when no speech runtime is loaded and accepting work, or the loaded one has no final model, which a session needs."),
+    ),
+    extensions(
+        ("x-runvil-standard" = json!("openai-realtime-transcription")),
+        ("x-runvil-feature" = json!("stt")),
+        ("x-runvil-loopback-trust" = json!(true)),
+        ("x-runvil-websocket" = json!(true)),
+        ("x-runvil-extension-fields" = json!([{
+            "name": "conversation.item.input_audio_transcription.hypothesis",
+            "description": "The hypothesis event a session receives only after naming `item.input_audio_transcription.hypothesis` in `session.include`.",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "session.include"
+        }])),
+    ),
+)]
 async fn upgrade(
     State(state): State<RouteState>,
     uri: Uri,
@@ -343,83 +390,6 @@ fn event_id(event: &ClientEvent) -> Option<String> {
         | ClientEvent::Append { event_id, .. }
         | ClientEvent::Commit { event_id }
         | ClientEvent::Clear { event_id } => event_id.clone(),
-    }
-}
-fn session_error(error: &SessionError, client_event_id: Option<String>) -> ClientError {
-    match error {
-        SessionError::Audio(AudioError::InvalidBase64(_)) => ClientError::request(
-            "invalid_base64_audio",
-            "Audio must be valid Base64",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::Audio(AudioError::AppendTooLarge { .. }) => ClientError::request(
-            "audio_append_too_large",
-            "Decoded audio exceeds the 15 MiB append limit",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::Audio(AudioError::IncompletePcm16Sample) => ClientError::request(
-            "invalid_pcm_audio",
-            "PCM16 audio ends with an incomplete sample",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::Audio(AudioError::BufferTooLong {
-            maximum_seconds,
-            retained_ms,
-            requested_ms,
-        }) => ClientError::overload(
-            "too_much_unfinalized_audio",
-            format!(
-                "Unfinalized audio exceeds {maximum_seconds} seconds: {retained_ms} ms retained, {requested_ms} ms requested"
-            ),
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::Audio(AudioError::CommitTooShort { .. }) => ClientError::request(
-            "audio_too_short",
-            "A commit requires at least 100 ms of audio",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::CommittedItemsAtCapacity => ClientError::overload(
-            "too_many_committed_items",
-            "At most four committed items may finalize concurrently",
-            None,
-            client_event_id,
-        ),
-        SessionError::PendingPrecommitFailure(_) => ClientError::request(
-            "precommit_transcription_failed",
-            "Further appends are rejected after accurate precommit failure",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::CancelJoinAtCapacity => ClientError::overload(
-            "audio_queue_lag",
-            "Audio queue lag exceeds two seconds",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::NoInput => ClientError::request(
-            "input_audio_buffer_empty",
-            "The input audio buffer is empty",
-            Some("audio"),
-            client_event_id,
-        ),
-        SessionError::EpochExhausted
-        | SessionError::CanceledTaskFailed
-        | SessionError::GenerationUnavailable
-        | SessionError::Inference(_)
-        | SessionError::Finalization(_)
-        | SessionError::Mailbox(MailboxError::TerminalAlreadySet | MailboxError::UnknownItem) => {
-            ClientError::server(
-                "internal_error",
-                "Transcription failed",
-                None,
-                client_event_id,
-            )
-        }
     }
 }
 async fn send_update(

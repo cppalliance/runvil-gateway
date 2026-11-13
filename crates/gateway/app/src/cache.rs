@@ -21,9 +21,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get};
 use axum::{Json, Router};
 use gateway_progress::Activity;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use utoipa::ToSchema;
 
 use crate::AppState;
 use crate::auth::AuthedCaller;
@@ -34,6 +35,7 @@ use crate::local::artifacts::{
 use crate::local::cache::{BlobCache, CacheEntry, CachedBlob};
 use crate::local::{LocalError, resolve_cache_root};
 use crate::registry::RouteInfo;
+use crate::wire::ErrorEnvelope;
 
 const CACHE: RouteInfo = RouteInfo::open("/v1/cache", &[Method::GET, Method::POST]);
 const CACHE_ENTRY: RouteInfo = RouteInfo::open("/v1/cache/{sha256}", &[Method::DELETE]);
@@ -63,6 +65,24 @@ async fn live_cache_dir(state: &AppState) -> Option<String> {
 /// Reads `<file>.meta.json` sidecars only, so listing never re-hashes a blob
 /// (Amendment C); blobs without sidecars are not cache entries and do not
 /// appear.
+#[utoipa::path(
+    get,
+    path = CACHE.path,
+    operation_id = "get_v1_cache",
+    tag = "cache",
+    responses(
+        (status = 200, description = "The cached blobs that have sidecars.", body = Vec<CacheEntry>),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 500, description = "The cache store failed, or its blocking task did not complete.", body = ErrorEnvelope),
+    ),
+    extensions(
+        ("x-runvil-extension" = json!(true)),
+        ("x-runvil-opt-in" = json!(false)),
+        ("x-runvil-feature" = json!("local")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn list_cache(
     State(state): State<AppState>,
     _caller: AuthedCaller,
@@ -74,8 +94,33 @@ async fn list_cache(
     Ok(Json(entries))
 }
 
+/// The `DELETE /v1/cache/{sha256}` body: the removed digest.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct CacheDeletedReply {
+    /// The digest that was removed.
+    sha256: String,
+    /// Always `deleted`.
+    status: &'static str,
+}
+
+/// A ready cache blob: the body of a cache hit.
+// The handler writes this body with `json!`, because a `PathBuf` that is not
+// valid UTF-8 panics inside `json!` where a typed reply would answer an error
+// instead. This type names the shape for the OpenAPI description only.
+#[derive(ToSchema)]
+#[expect(
+    dead_code,
+    reason = "the OpenAPI description reads this type; the handler writes the reply with json!"
+)]
+struct CacheReadyReply {
+    /// Absolute path of the cached blob.
+    path: String,
+    /// Always `ready`.
+    status: String,
+}
+
 /// The `POST /v1/cache` request body.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct CacheRequest {
     /// The http(s) URL to download.
     source: String,
@@ -108,6 +153,29 @@ fn validate_source(source: &str) -> Result<String, GatewayError> {
 /// progress events (`total` is null when the server sent no Content-Length),
 /// terminated by `{"status": "ready", "path"}` or, on failure,
 /// `{"status": "error", "message"}`.
+#[utoipa::path(
+    post,
+    path = CACHE.path,
+    operation_id = "post_v1_cache",
+    tag = "cache",
+    request_body = CacheRequest,
+    responses(
+        (status = 200, description = "On a hit, the JSON body. On a miss, a server-sent event stream of `{\"status\": \"downloading\", \"bytes\", \"total\"}` events, then one `{\"status\": \"ready\", \"path\"}` or `{\"status\": \"error\", \"message\"}` event.", content(
+            (CacheReadyReply = "application/json"),
+            (String = "text/event-stream"),
+        )),
+        (status = 400, description = "The body is not JSON this route accepts, `source` is not an http or https URL with a host and a file name, or `sha256` is not a 64-character hex digest.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 500, description = "The cache store failed, or its blocking task did not complete.", body = ErrorEnvelope),
+    ),
+    extensions(
+        ("x-runvil-extension" = json!(true)),
+        ("x-runvil-opt-in" = json!(false)),
+        ("x-runvil-feature" = json!("local")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn post_cache(
     State(state): State<AppState>,
     _caller: AuthedCaller,
@@ -165,11 +233,34 @@ async fn post_cache(
 /// Answers 200 with `{"status": "deleted", "sha256"}` when an entry was
 /// removed, 404 `cache_entry_not_found` when no sidecar records the digest,
 /// and 400 when the path parameter is not a 64-character hex digest.
+#[utoipa::path(
+    delete,
+    path = CACHE_ENTRY.path,
+    operation_id = "delete_v1_cache_sha256",
+    tag = "cache",
+    params(
+        ("sha256" = String, Path, description = "The SHA-256 digest of the cached file, as `GET /v1/cache` lists it: 64 hexadecimal characters, in either case."),
+    ),
+    responses(
+        (status = 200, description = "The entry was removed.", body = CacheDeletedReply),
+        (status = 400, description = "The digest is not 64 hexadecimal characters. A capture axum cannot decode is answered with axum's plain-text 400 instead.", body = ErrorEnvelope),
+        (status = 401, description = "The bearer key was missing or did not match `server.key`.", body = ErrorEnvelope),
+        (status = 403, description = "No body. The host wall refused a request whose authority is not the bound loopback socket."),
+        (status = 404, description = "No sidecar records the digest.", body = ErrorEnvelope),
+        (status = 500, description = "The cache store failed, or its blocking task did not complete.", body = ErrorEnvelope),
+    ),
+    extensions(
+        ("x-runvil-extension" = json!(true)),
+        ("x-runvil-opt-in" = json!(false)),
+        ("x-runvil-feature" = json!("local")),
+        ("x-runvil-loopback-trust" = json!(true)),
+    ),
+)]
 async fn delete_cache(
     State(state): State<AppState>,
     _caller: AuthedCaller,
     Path(sha256): Path<String>,
-) -> Result<Json<serde_json::Value>, GatewayError> {
+) -> Result<Json<CacheDeletedReply>, GatewayError> {
     let wanted = parse_expected_digest(&sha256)
         .map_err(|error| GatewayError::MalformedRequest(error.to_string()))?;
     let cache_dir = live_cache_dir(&state).await;
@@ -180,10 +271,10 @@ async fn delete_cache(
     if !removed {
         return Err(GatewayError::CacheEntryNotFound(wanted));
     }
-    Ok(Json(serde_json::json!({
-        "status": "deleted",
-        "sha256": wanted,
-    })))
+    Ok(Json(CacheDeletedReply {
+        sha256: wanted,
+        status: "deleted",
+    }))
 }
 
 /// The byte counts of one cache download, as the SSE payload reports them.

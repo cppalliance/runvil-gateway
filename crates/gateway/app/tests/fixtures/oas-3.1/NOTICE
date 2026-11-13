@@ -1,0 +1,5 @@
+The JSON Schemas in this directory are the OpenAPI 3.1 schema, schema-base,
+dialect, and meta documents published by the OpenAPI Initiative at
+https://spec.openapis.org/oas/3.1/. They are covered by the Apache License
+2.0, whose terms are in LICENSE, copied from
+https://github.com/OAI/OpenAPI-Specification.

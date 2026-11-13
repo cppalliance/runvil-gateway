@@ -181,3 +181,54 @@ fn speech_request_rejects_reserved_keys_in_rest() {
     req.rest.insert("input".to_owned(), serde_json::json!("y"));
     assert!(req.validate().is_err());
 }
+
+/// The schema restates the speech bounds as literals, because utoipa's
+/// length and range attributes take no constant, so this test reads the
+/// bounds back out of the schema and holds them against `validate`.
+#[test]
+fn the_schema_bounds_are_the_bounds_validate_enforces() {
+    let schema = serde_json::to_value(<SpeechRequest as utoipa::PartialSchema>::schema())
+        .expect("the schema serializes");
+    let bound = |pointer: &str| {
+        schema
+            .pointer(pointer)
+            .and_then(Value::as_f64)
+            .unwrap_or_else(|| panic!("the schema has no {pointer}"))
+    };
+    let length = |pointer: &str| {
+        schema
+            .pointer(pointer)
+            .and_then(Value::as_u64)
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or_else(|| panic!("the schema has no {pointer}"))
+    };
+    let max_chars = length("/properties/input/maxLength");
+    assert_eq!(length("/properties/input/minLength"), 1);
+    assert!(speech_request("m", "").validate().is_err());
+    assert!(
+        speech_request("m", &"x".repeat(max_chars))
+            .validate()
+            .is_ok()
+    );
+    assert!(
+        speech_request("m", &"x".repeat(max_chars + 1))
+            .validate()
+            .is_err()
+    );
+    for (pointer, inside, outside) in [
+        ("/properties/speed/minimum", 0.0, -0.01),
+        ("/properties/speed/maximum", 0.0, 0.01),
+    ] {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the bounds are 0.25 and 4.0, exact in f32"
+        )]
+        let edge = bound(pointer) as f32;
+        let at = |speed: f32| SpeechRequest {
+            speed: Some(speed),
+            ..speech_request("m", "hi")
+        };
+        assert!(at(edge + inside).validate().is_ok(), "{pointer} accepted");
+        assert!(at(edge + outside).validate().is_err(), "{pointer} refused");
+    }
+}

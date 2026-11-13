@@ -1,0 +1,2363 @@
+{
+  "components": {
+    "schemas": {
+      "CacheDeletedReply": {
+        "description": "The `DELETE /v1/cache/{sha256}` body: the removed digest.",
+        "properties": {
+          "sha256": {
+            "description": "The digest that was removed.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Always `deleted`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CacheEntry": {
+        "description": "One entry of the cache listing: a blob plus the source it was fetched from.",
+        "properties": {
+          "path": {
+            "description": "Absolute path of the blob under the cache root.",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256 of the blob's bytes.",
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "Blob length in bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "description": "The URL the blob was downloaded from.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "type": "object"
+      },
+      "CacheReadyReply": {
+        "description": "A ready cache blob: the body of a cache hit.",
+        "properties": {
+          "path": {
+            "description": "Absolute path of the cached blob.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Always `ready`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CacheRequest": {
+        "description": "The `POST /v1/cache` request body.",
+        "properties": {
+          "sha256": {
+            "description": "Optional SHA-256 pin, verified against the downloaded bytes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "The http(s) URL to download.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "Capabilities": {
+        "description": "Capability metadata advertised on the model catalog.\n\nThese fields describe what a model can do rather than how the gateway\nreaches it. They are flattened into `[[model]]` and `[[local_model]]`,\nvalidated at load, and surfaced verbatim on `GET /v1/models` so clients\ncan shape requests before sending them. The effort knobs are chat-only\nand require a `thinking` mode other than `never`; the `voices` list is\nspeech-only.",
+        "properties": {
+          "adaptive_thinking": {
+            "description": "Whether the model adaptively chooses how much to think per request;\nchat kind only. Defaults to false.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "default_effort": {
+            "description": "The effort level applied when the caller omits one; requires a\nnon-empty `effort_levels` and must name a listed level.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "default_temperature": {
+            "description": "Sampling temperature applied when the caller omits one.",
+            "format": "float",
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "effort_levels": {
+            "description": "The reasoning-effort levels the model accepts. Empty means the model\nhas no effort knob.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "images": {
+            "description": "Whether the model accepts image inputs. Defaults to false; a\n`[local_model.multimodal_projector]` companion implies true.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "max_output": {
+            "description": "Max output tokens the model can emit per completion. Must not exceed\n`context` when set.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "parallel_tool_calls": {
+            "description": "Whether the model can emit parallel tool calls. Defaults to false.",
+            "type": "boolean",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "provider": {
+            "description": "The model's provider id, such as `xai`. It describes the model, not\nthe endpoint the gateway reaches it through, and uses only lowercase\nletters, digits, `.`, `_`, and `-`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "voices": {
+            "description": "The voices the model offers for speech synthesis; speech kind only.\nEmpty means the model exposes no fixed voice list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          }
+        },
+        "required": [
+          "images",
+          "parallel_tool_calls",
+          "effort_levels",
+          "adaptive_thinking",
+          "voices"
+        ],
+        "type": "object"
+      },
+      "CatalogModelInfo": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ModelInfo",
+            "description": "Existing chat, embedding, classifier, or speech metadata."
+          },
+          {
+            "$ref": "#/components/schemas/SpeechCatalogModelInfo",
+            "description": "Generic transcription metadata."
+          }
+        ],
+        "description": "One routed inference model or active speech model."
+      },
+      "CatalogModelsResponse": {
+        "description": "The model-list wire response, including routed and active speech models.",
+        "properties": {
+          "data": {
+            "description": "Models currently accepting their respective request shape.",
+            "items": {
+              "$ref": "#/components/schemas/CatalogModelInfo"
+            },
+            "type": "array"
+          },
+          "object": {
+            "description": "Always `\"list\"`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ChatChunk": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name (for example `usage` on a\nfinal chunk), preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "One chunk of a streaming chat completion (OpenAI streaming shape).\n\nA `stream: true` completion arrives as a sequence of these chunks, each\nholding partial `delta` content instead of a complete `message`. The\nterminal `[DONE]` sentinel is not JSON and never deserializes into this\ntype; the relay special-cases it before parsing.",
+        "properties": {
+          "choices": {
+            "description": "The partial choices for this chunk.",
+            "items": {
+              "$ref": "#/components/schemas/ChatChunkChoice"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "choices"
+        ],
+        "type": "object"
+      },
+      "ChatChunkChoice": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name (for example `finish_reason`\non the terminal chunk), preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "One partial choice in a [`ChatChunk`]: an `index` plus a `delta` holding\nthe incremental payload (`role` on the first chunk, content or tool-call\nfragments thereafter).",
+        "properties": {
+          "delta": {
+            "description": "The incremental payload, kept as opaque JSON so every field the\ngateway does not route passes through untouched.",
+            "x-runvil-pass-through": true
+          },
+          "index": {
+            "description": "The completion choice this delta belongs to.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "delta"
+        ],
+        "type": "object"
+      },
+      "ChatRequest": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name, preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An incoming chat completions request.",
+        "properties": {
+          "messages": {
+            "description": "The conversation messages, passed through to the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "stream": {
+            "description": "Whether the caller asked for a streaming (SSE) completion. Absent\nmeans non-streaming; an absent `stream` is never forwarded.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "ChatResponse": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name, preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An outgoing chat completions response.",
+        "properties": {
+          "choices": {
+            "description": "The completion choices, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "choices"
+        ],
+        "type": "object"
+      },
+      "EmbeddingInput": {
+        "description": "The text to embed: one string or a batch of strings (OpenAI shape).",
+        "oneOf": [
+          {
+            "description": "A single input string.",
+            "type": "string"
+          },
+          {
+            "description": "A batch of input strings.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ]
+      },
+      "EmbeddingRequest": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name, preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An incoming embeddings request.",
+        "properties": {
+          "encoding_format": {
+            "description": "The encoding format (`\"float\"` or `\"base64\"`); absent means the\nbackend's default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "$ref": "#/components/schemas/EmbeddingInput",
+            "description": "The text to embed."
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ],
+        "type": "object"
+      },
+      "EmbeddingResponse": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name (for example `usage`), preserved\nverbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An outgoing embeddings response.",
+        "properties": {
+          "data": {
+            "description": "The embedding entries, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "description": "The error: a message, its OpenAI error class, and its code.",
+        "properties": {
+          "code": {
+            "description": "The machine-readable error code, such as `model_not_found`.",
+            "type": "string"
+          },
+          "message": {
+            "description": "A human-readable message.",
+            "type": "string"
+          },
+          "type": {
+            "description": "The OpenAI error class, such as `invalid_request_error`,\n`authentication_error`, `rate_limit_error`, or `server_error`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "type",
+          "code"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "description": "The body of every JSON error response, in the OpenAI shape:\n`{\"error\": {\"message\", \"type\", \"code\"}}`.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail",
+            "description": "The error itself."
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "HealthReply": {
+        "description": "The `GET /health` body: `status` is `serving` while the gateway answers.",
+        "properties": {
+          "status": {
+            "description": "`serving` while the gateway is answering requests.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "JsonTranscription": {
+        "description": "A basic OpenAI transcription response.",
+        "properties": {
+          "text": {
+            "description": "The decoded transcript.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "ModelInfo": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Capabilities",
+            "description": "Capability metadata (`max_output`, `images`, effort levels, and so\non), flattened into the catalog entry."
+          },
+          {
+            "properties": {
+              "context": {
+                "description": "Context window size in tokens.",
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer",
+                "x-runvil-extension": true,
+                "x-runvil-opt-in": false
+              },
+              "description": {
+                "description": "Prose describing the model for catalog consumers and semantic bind.",
+                "type": "string",
+                "x-runvil-extension": true,
+                "x-runvil-opt-in": false
+              },
+              "id": {
+                "description": "The caller-facing model name (`[[model]].name`).",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/ModelKind",
+                "description": "The workload this model serves (`\"chat\"`, `\"embedding\"`,\n`\"classifier\"`, `\"speech\"`, `\"transcription\"`, `\"image\"`,\n`\"video\"`).",
+                "x-runvil-extension": true,
+                "x-runvil-opt-in": false
+              },
+              "object": {
+                "description": "Always `\"model\"`.",
+                "type": "string"
+              },
+              "thinking": {
+                "$ref": "#/components/schemas/ThinkingMode",
+                "description": "Whether thinking tokens are never, always, or switchably available.",
+                "x-runvil-extension": true,
+                "x-runvil-opt-in": false
+              }
+            },
+            "required": [
+              "id",
+              "object",
+              "kind",
+              "description",
+              "context",
+              "thinking"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "One catalogued model, with Runvil extensions beside the OpenAI `id`."
+      },
+      "ModelKind": {
+        "description": "The workload a model serves: chat completions, embeddings,\nclassification, speech synthesis, transcription, or image or video\ngeneration.\n\nThe kind scopes which configuration fields are meaningful: chat-only\nfields (for example `thinking`, `default_max_tokens`,\n`chat_template_file`) are rejected for non-chat kinds at validation,\nwhile `context` applies to every kind. The catalog includes the kind so\nclients can filter before building a request.",
+        "enum": [
+          "chat",
+          "embedding",
+          "classifier",
+          "speech",
+          "transcription",
+          "image",
+          "video"
+        ],
+        "type": "string"
+      },
+      "RerankRequest": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name, preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An incoming rerank request (the llama-server/vLLM/Jina shape: a query and\na document set in, ranked relevance scores out).",
+        "properties": {
+          "documents": {
+            "description": "The candidate documents to rank.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "query": {
+            "description": "The query each document is scored against.",
+            "type": "string"
+          },
+          "top_n": {
+            "description": "How many top-ranked results to return; absent means the backend's\ndefault.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "model",
+          "query",
+          "documents"
+        ],
+        "type": "object"
+      },
+      "RerankResponse": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name (for example `usage`), preserved\nverbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An outgoing rerank response.",
+        "properties": {
+          "model": {
+            "description": "The model name, rewritten to the caller's requested name.",
+            "type": "string"
+          },
+          "results": {
+            "description": "The ranked results, passed through from the backend verbatim.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "results"
+        ],
+        "type": "object"
+      },
+      "SearchResult": {
+        "description": "One search result, trimmed to the fields the executor needs.",
+        "properties": {
+          "age": {
+            "description": "The result's age, when the provider reports one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "description": "A short description or snippet.",
+            "type": "string"
+          },
+          "extra_snippets": {
+            "description": "Extra snippets from the provider, when present.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "site_name": {
+            "description": "Hostname derived from `url`, when parsing succeeds.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "The result's title.",
+            "type": "string"
+          },
+          "url": {
+            "description": "The result's URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "description"
+        ],
+        "type": "object"
+      },
+      "SpeechCatalogModelInfo": {
+        "description": "Speech metadata contains only fields meaningful to transcription clients.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "kind"
+        ],
+        "type": "object",
+        "x-runvil-feature": "stt"
+      },
+      "SpeechRequest": {
+        "additionalProperties": {
+          "description": "Every field the gateway does not name, preserved verbatim.",
+          "x-runvil-pass-through": true
+        },
+        "description": "An incoming speech synthesis request.",
+        "properties": {
+          "input": {
+            "description": "The text to synthesize, at most 4096 characters.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "instructions": {
+            "description": "Style-control instructions (the gpt-4o-mini-tts dialect's field);\nabsent means the backend's default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "description": "The model name, resolved against the routing table.",
+            "type": "string"
+          },
+          "response_format": {
+            "$ref": "#/components/schemas/SpeechResponseFormat",
+            "default": "mp3",
+            "description": "The requested audio encoding. An omitted field resolves to `mp3` at\ndeserialization, so the pin is structural and every forwarded body\nincludes it."
+          },
+          "speed": {
+            "description": "The playback speed (0.25 to 4.0); absent means the backend's default.",
+            "format": "float",
+            "maximum": 4,
+            "minimum": 0.25,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stream_format": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SpeechStreamFormat",
+                "description": "The streaming framing selector; absent means chunked binary audio."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice": {
+            "$ref": "#/components/schemas/SpeechVoice",
+            "description": "The voice to synthesize with."
+          }
+        },
+        "required": [
+          "model",
+          "input",
+          "voice"
+        ],
+        "type": "object"
+      },
+      "SpeechResponseFormat": {
+        "description": "The audio encoding a speech response is requested in (the OpenAI set).\n\nThe set is closed on purpose: provider-only spellings (Together's `raw`\nand `mulaw`) stay unrepresentable until the enum is deliberately widened.",
+        "enum": [
+          "mp3",
+          "opus",
+          "aac",
+          "flac",
+          "wav",
+          "pcm"
+        ],
+        "type": "string"
+      },
+      "SpeechStreamFormat": {
+        "description": "How a streaming speech response is framed (the OpenAI set).",
+        "enum": [
+          "audio",
+          "sse"
+        ],
+        "type": "string"
+      },
+      "SpeechVoice": {
+        "description": "The voice to synthesize with: a plain name or the OpenAI object form\n(`{\"id\": \"...\"}`). Membership in a model's catalog is checked at the\nroute, never here, because voice sets are per-checkpoint.",
+        "oneOf": [
+          {
+            "description": "A plain voice name.",
+            "type": "string"
+          },
+          {
+            "description": "The OpenAI object form, with the voice under `id`.",
+            "properties": {
+              "id": {
+                "description": "The voice identifier.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ThinkingMode": {
+        "description": "How a model exposes chain-of-thought / thinking tokens to callers.\n\nCatalogued on each `[[model]]` so a Host can filter bindings before a\nrequest is built. `never` and `always` mean the backend ignores a\nper-call switch; `switchable` means the client may emit\n`chat_template_kwargs.enable_thinking`.",
+        "enum": [
+          "never",
+          "always",
+          "switchable"
+        ],
+        "type": "string"
+      },
+      "TimestampGranularity": {
+        "description": "One value of `timestamp_granularities[]`.",
+        "enum": [
+          "word",
+          "segment"
+        ],
+        "type": "string"
+      },
+      "TranscriptionResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JsonTranscription",
+            "description": "The compact `json` response."
+          },
+          {
+            "$ref": "#/components/schemas/VerboseJsonTranscription",
+            "description": "The `verbose_json` response."
+          }
+        ],
+        "description": "A successful transcription in the requested OpenAI JSON dialect."
+      },
+      "TranscriptionResponseFormat": {
+        "description": "The reply dialect a request asks for in `response_format`.",
+        "enum": [
+          "json",
+          "verbose_json"
+        ],
+        "type": "string"
+      },
+      "TranscriptionSegment": {
+        "description": "One clip-level segment in a verbose transcription response.",
+        "properties": {
+          "end": {
+            "description": "Segment end in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "description": "Zero-based segment identifier.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "description": "Segment start in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "text": {
+            "description": "Text decoded for the segment.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text"
+        ],
+        "type": "object"
+      },
+      "VerboseJsonTranscription": {
+        "description": "An OpenAI verbose transcription response.",
+        "properties": {
+          "duration": {
+            "description": "Audio duration in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "language": {
+            "description": "The transcription language, always `en`.",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Clip-level segments when segment granularity was requested.",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptionSegment"
+            },
+            "type": "array"
+          },
+          "task": {
+            "description": "Requested task name.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The decoded transcript.",
+            "type": "string"
+          },
+          "words": {
+            "description": "Word timestamps. The speech engine produces segments only, so\nthis array stays empty when word granularity is requested.",
+            "items": {
+              "x-runvil-pass-through": true
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "task",
+          "language",
+          "duration",
+          "text",
+          "segments",
+          "words"
+        ],
+        "type": "object"
+      },
+      "Voice": {
+        "description": "One voice in the `GET /v1/audio/voices` body. `name` mirrors `id`: the\ncatalog configures voices as bare strings with no separate display name.",
+        "properties": {
+          "id": {
+            "description": "The voice identifier clients send as `voice`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The display name. It mirrors `id`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "VoicesReply": {
+        "description": "The `GET /v1/audio/voices` body: the deduplicated, sorted voices under\n`voices`.",
+        "properties": {
+          "voices": {
+            "description": "The active profile's speech voices.",
+            "items": {
+              "$ref": "#/components/schemas/Voice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "voices"
+        ],
+        "type": "object"
+      },
+      "WebSearchRequest": {
+        "additionalProperties": false,
+        "description": "The request body for `POST /v1/tools/web_search`.",
+        "properties": {
+          "count": {
+            "description": "The desired number of results. Defaults to\n[`WebSearchConfig::default_count`] and is clamped to\n[`WebSearchConfig::max_count`].",
+            "format": "int32",
+            "maximum": 255,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "country": {
+            "description": "Country code; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exclude_domains": {
+            "description": "Hostname exclude filter; empty means no exclude filter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "freshness": {
+            "description": "Freshness filter; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_domains": {
+            "description": "Hostname include filter; empty means no include filter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "query": {
+            "description": "The search query.",
+            "type": "string"
+          },
+          "safesearch": {
+            "description": "SafeSearch level; falls back to settings when omitted or empty.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search_lang": {
+            "description": "Search language; empty or absent means omit from the provider query.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "WebSearchResponse": {
+        "description": "The response body for `POST /v1/tools/web_search`.",
+        "properties": {
+          "query": {
+            "description": "The trimmed request query that produced these results.",
+            "type": "string"
+          },
+          "results": {
+            "description": "The trimmed search results.",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "An `Authorization: Bearer` token equal to the gateway's key. While `[server] trust_loopback` is on, the default, a loopback peer that sends no `Authorization` header and no `Sec-Fetch-Site` other than `same-origin` or `none` is admitted without one.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "sessionCookie": {
+        "description": "The session cookie the `/auth` browser handoff sets, accepted only on a request whose `Sec-Fetch-Site` is `same-origin` or `none`.",
+        "in": "cookie",
+        "name": "runvil-gateway-session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The Gateway's HTTP API: OpenAI-shaped routes for chat, embeddings, rerank, speech, transcription, and the model list, plus the Gateway's own extensions. Every route follows the standard it is modeled on where one exists, and every addition is named as an extension (`x-runvil-extension`) and is opt-in where the protocol offers a way to ask. Every route except `/health` needs a credential, except that while `[server] trust_loopback` is on, the default, a loopback peer that sends none is admitted; the operations that admit it carry `x-runvil-loopback-trust`.",
+    "license": {
+      "identifier": "BSL-1.0",
+      "name": "BSL-1.0"
+    },
+    "title": "Runvil Gateway",
+    "version": "0.3.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReply"
+                }
+              }
+            },
+            "description": "The gateway is serving."
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Liveness probe; unauthenticated and always 200 while serving.",
+        "tags": [
+          "health"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-opt-in": false
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "description": "Two deliberate departures from the other routes. First, auth runs before\nbody extraction: the handler takes the [`AuthedCaller`] parts extractor,\nwhich runs the auth rules while the parts are extracted, and only then\nextracts `WireJson<SpeechRequest>` from the raw [`Request`] by hand, so\nan unauthorized caller never makes the gateway parse a body. Second, the\nreply is a byte passthrough, not a typed relay: audio frames are opaque\nbytes the gateway cannot re-validate per chunk, so the upstream body is\nforwarded unread - the one departure from the gateway's typed-relay\nnorm, the same trade [`crate::relay::relay_sse`] documents for its own\ndesign. Because the response is a long-lived byte stream, this route\nmust never sit under a `CompressionLayer` or a whole-request\n`TimeoutLayer`: both buffer or kill long-lived streams. The stream runs\nunder the bounded background relay [`relay_audio`] documents, so every\nearly end - a tripped bound or an upstream failure - fails the client's\nbody read rather than truncating it.",
+        "operationId": "post_v1_audio_speech",
+        "parameters": [
+          {
+            "description": "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "The client chooses to send the header."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "audio/aac": {},
+              "audio/flac": {},
+              "audio/mpeg": {},
+              "audio/ogg": {},
+              "audio/pcm": {},
+              "audio/wav": {},
+              "text/event-stream": {}
+            },
+            "description": "The synthesized audio as a chunked byte stream. The `Content-Type` is the upstream's when it sends a valid one, otherwise the type for `response_format`, or `text/event-stream` when `stream_format` is `sse`. A failure after the headers aborts the body read."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts or failed validation, the voice is not one the model offers, or the model is of another kind or its upstream cannot serve speech.",
+            "x-runvil-error-codes": [
+              "invalid_voice",
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model's queue turned the request away at capacity, or the upstream rate-limited the request.",
+            "x-runvil-error-codes": [
+              "queue_rejected",
+              "upstream_rate_limited"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend answered with this client error status, passed through. An upstream 429 is mapped to the 429 above instead.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model is still loading, a queue command is provisioning it, its queue is full, or the upstream answered 503.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait, always 5. Sent only while the named local model's child is spawning.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full",
+              "upstream_unavailable"
+            ]
+          }
+        },
+        "summary": "The speech route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"speech\"` models.",
+        "tags": [
+          "speech"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "description": "The reply is `{\"text\"}` by default, or the `verbose_json` object when\n`response_format` asks for it.",
+        "operationId": "post_v1_audio_transcriptions",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "description": "The form fields the route reads. A part with another name is ignored.",
+                "properties": {
+                  "file": {
+                    "description": "The audio to transcribe, as a WAV file of 16 kHz mono samples. A\nfile over 25 MiB is refused with 413 while it is read, and any other\nformat, sample rate, or channel count is refused with 400.",
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "Accepted only as `en`, the one language the speech models\ntranscribe. Any other value is refused with 400.",
+                    "pattern": "^en$",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "A speech model name that `GET /v1/models` lists: the configured\ninterim or final model, or `realtime-transcribe`, which decodes with\nthe final model and exists only while one is configured.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Comma-separated terms the decoder is biased toward, read as a term\nlist rather than OpenAI's free-text prompt. Terms that do not fit the\ndecoder's prompt are dropped from the end.",
+                    "type": "string"
+                  },
+                  "response_format": {
+                    "$ref": "#/components/schemas/TranscriptionResponseFormat",
+                    "description": "`json`, the default, or `verbose_json`. Any other value, including\nOpenAI's `text`, `srt`, and `vtt`, is refused with 400."
+                  },
+                  "temperature": {
+                    "description": "Validated, then not used: a finite number of zero or more, or the\nrequest is refused with 400.",
+                    "format": "float",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "timestamp_granularities[]": {
+                    "description": "Repeatable. A valid value changes nothing: a `verbose_json` reply\nalways holds one segment for the whole clip and no word timestamps.",
+                    "items": {
+                      "$ref": "#/components/schemas/TimestampGranularity"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "file",
+                  "model"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              }
+            },
+            "description": "The transcript, in the dialect `response_format` named."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not readable multipart form data, lacks `file` or `model`, holds a refused field value, or carries audio that is not a 16 kHz mono WAV.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The Gateway's auth layer refused the caller: the bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`model` names no speech model the gateway serves right now, which is every name while the speech models are not loaded.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The `file` field passed 25 MiB.",
+            "x-runvil-error-codes": [
+              "file_too_large"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Decoding failed after every check passed, which includes a speech worker whose queue is full. The `message` is always `transcription failed`.",
+            "x-runvil-error-codes": [
+              "transcription_error"
+            ]
+          }
+        },
+        "summary": "Transcribes one uploaded WAV clip with a loaded speech model, in the\nshape of OpenAI's transcription route.",
+        "tags": [
+          "stt"
+        ],
+        "x-runvil-feature": "stt",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/audio/voices": {
+      "get": {
+        "description": "OpenAI has no voice-list route; the OpenAI-compatible ecosystem\n(Kokoro-FastAPI, vLLM-Omni, Fish Audio) converged on this one, and\nclients such as Open WebUI read the `id` key, so the entry shape is a\ncompatibility surface pinned by the integration suite. `name` mirrors\n`id`: the catalog configures voices as bare strings with no separate\ndisplay name.",
+        "operationId": "get_v1_audio_voices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoicesReply"
+                }
+              }
+            },
+            "description": "The active profile's speech voices."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          }
+        },
+        "summary": "Bearer-authed union of the active profile's speech voices for catalog\nbind: every `kind = \"speech\"` model's configured `voices`, deduplicated\nand sorted, as id-first `{\"id\", \"name\"}` entries under\n`{\"voices\": [...]}`.",
+        "tags": [
+          "speech"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false
+      }
+    },
+    "/v1/cache": {
+      "get": {
+        "description": "Reads `<file>.meta.json` sidecars only, so listing never re-hashes a blob\n(Amendment C); blobs without sidecars are not cache entries and do not\nappear.",
+        "operationId": "get_v1_cache",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CacheEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The cached blobs that have sidecars."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The cache store failed, or its blocking task did not complete.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "summary": "`GET /v1/cache`: the sidecar-backed listing of cached blobs.",
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false
+      },
+      "post": {
+        "description": "A cache hit (blob + sidecar present, pin matching when named) answers\nimmediately with JSON `{\"path\", \"status\": \"ready\"}`. A miss answers with\n`text/event-stream`: `{\"status\": \"downloading\", \"bytes\", \"total\"}`\nprogress events (`total` is null when the server sent no Content-Length),\nterminated by `{\"status\": \"ready\", \"path\"}` or, on failure,\n`{\"status\": \"error\", \"message\"}`.",
+        "operationId": "post_v1_cache",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheReadyReply"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "On a hit, the JSON body. On a miss, a server-sent event stream of `{\"status\": \"downloading\", \"bytes\", \"total\"}` events, then one `{\"status\": \"ready\", \"path\"}` or `{\"status\": \"error\", \"message\"}` event."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts, `source` is not an http or https URL with a host and a file name, or `sha256` is not a 64-character hex digest.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The cache store failed, or its blocking task did not complete.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "summary": "`POST /v1/cache`: ensure the blob for `source` is cached.",
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false
+      }
+    },
+    "/v1/cache/{sha256}": {
+      "delete": {
+        "description": "Answers 200 with `{\"status\": \"deleted\", \"sha256\"}` when an entry was\nremoved, 404 `cache_entry_not_found` when no sidecar records the digest,\nand 400 when the path parameter is not a 64-character hex digest.",
+        "operationId": "delete_v1_cache_sha256",
+        "parameters": [
+          {
+            "description": "The SHA-256 digest of the cached file, as `GET /v1/cache` lists it: 64 hexadecimal characters, in either case.",
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheDeletedReply"
+                }
+              }
+            },
+            "description": "The entry was removed."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The digest is not 64 hexadecimal characters. A capture axum cannot decode is answered with axum's plain-text 400 instead.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No sidecar records the digest.",
+            "x-runvil-error-codes": [
+              "cache_entry_not_found"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The cache store failed, or its blocking task did not complete.",
+            "x-runvil-error-codes": [
+              "blocking_task_failed",
+              "cache_error"
+            ]
+          }
+        },
+        "summary": "`DELETE /v1/cache/{sha256}`: removes the blob and sidecar for a digest.",
+        "tags": [
+          "cache"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "local",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "post_v1_chat_completions",
+        "parameters": [
+          {
+            "description": "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "The client chooses to send the header."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-runvil-event-schemas": [
+                  "ChatChunk",
+                  "ErrorEnvelope"
+                ]
+              }
+            },
+            "description": "The completion. With `stream: true` the body is a server-sent event stream instead: one `data:` line per chunk in the `ChatChunk` schema, an `ErrorEnvelope` line if the upstream fails mid-stream, then `data: [DONE]`. The upstream's `Content-Type` is forwarded when it sends one."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model's queue turned the request away at capacity.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend answered with this client error status, passed through.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model is still loading, a queue command is provisioning it, or its queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait, always 5. Sent only while the named local model's child is spawning.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "summary": "The chat route to a backend.",
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-extension-fields": [
+          {
+            "description": "When an emulated tool dialect recovers from a malformed tool fence, the affected choice's message reports the reason under `gateway_warning` next to its emptied `content`.",
+            "name": "choices[].message.gateway_warning",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": false
+          }
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "operationId": "post_v1_embeddings",
+        "parameters": [
+          {
+            "description": "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "The client chooses to send the header."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingResponse"
+                }
+              }
+            },
+            "description": "The embeddings, as the upstream returned them."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model's queue turned the request away at capacity.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend answered with this client error status, passed through.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model is still loading, a queue command is provisioning it, or its queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait, always 5. Sent only while the named local model's child is spawning.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "summary": "The embeddings route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"embedding\"` models.",
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "get_v1_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogModelsResponse"
+                }
+              }
+            },
+            "description": "The routed models, then the active speech models in `stt` builds."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          }
+        },
+        "summary": "Bearer-authed catalog of configured models for catalog bind.",
+        "tags": [
+          "models"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai"
+      }
+    },
+    "/v1/realtime": {
+      "get": {
+        "description": "After the upgrade the socket carries OpenAI Realtime transcription events\nas JSON text frames. OpenAPI does not describe WebSocket messages; the\nclient events are parsed in `crates/gateway/stt/api/src/realtime/wire/client.rs`\nand the server events are written in\n`crates/gateway/stt/api/src/realtime/wire/server.rs`.",
+        "operationId": "get_v1_realtime",
+        "parameters": [
+          {
+            "description": "Must be exactly `intent=transcription`: a missing, empty, repeated, or extra parameter is refused with 400.",
+            "in": "query",
+            "name": "intent",
+            "required": true,
+            "schema": {
+              "description": "The one `intent` the upgrade accepts.",
+              "enum": [
+                "transcription"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "No body. The connection upgrades to a WebSocket of JSON text frames."
+          },
+          "400": {
+            "description": "No body when the query string is not exactly `intent=transcription`. A request without WebSocket upgrade headers gets 400 from axum before the query is checked, with a short text body."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The Gateway's auth layer refused the caller: the bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket, or the `Origin` check refused the page that opened the socket."
+          },
+          "429": {
+            "description": "No body when the gateway already has 8 realtime sessions open, its limit."
+          },
+          "503": {
+            "description": "No body when no speech runtime is loaded and accepting work, or the loaded one has no final model, which a session needs."
+          }
+        },
+        "summary": "Opens a realtime transcription session: a WebSocket handshake to\n`/v1/realtime?intent=transcription` that passes authentication and the\n`Origin` check upgrades to the session's event stream.",
+        "tags": [
+          "stt"
+        ],
+        "x-runvil-extension-fields": [
+          {
+            "description": "The hypothesis event a session receives only after naming `item.input_audio_transcription.hypothesis` in `session.include`.",
+            "name": "conversation.item.input_audio_transcription.hypothesis",
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "session.include"
+          }
+        ],
+        "x-runvil-feature": "stt",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "openai-realtime-transcription",
+        "x-runvil-websocket": true
+      }
+    },
+    "/v1/rerank": {
+      "post": {
+        "operationId": "post_v1_rerank",
+        "parameters": [
+          {
+            "description": "A caller name for fair queueing. A missing, empty, oversized, or otherwise invalid value is scheduled in the one `default` bucket.",
+            "in": "header",
+            "name": "X-Runvil-Client",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-runvil-extension": true,
+            "x-runvil-opt-in": "The client chooses to send the header."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerankRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RerankResponse"
+                }
+              }
+            },
+            "description": "The ranked results, as the upstream returned them."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts or failed validation, or the model is of another kind or its upstream cannot serve this workload.",
+            "x-runvil-error-codes": [
+              "kind_mismatch",
+              "malformed_request",
+              "model_unavailable"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request named a model with no `[[model]]` entry.",
+            "x-runvil-error-codes": [
+              "model_not_found"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model's queue turned the request away at capacity.",
+            "x-runvil-error-codes": [
+              "queue_rejected"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend answered with this client error status, passed through.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The upstream backend could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The named local model is still loading, a queue command is provisioning it, or its queue is full.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait, always 5. Sent only while the named local model's child is spawning.",
+                "schema": {
+                  "const": 5,
+                  "type": "integer"
+                }
+              }
+            },
+            "x-runvil-error-codes": [
+              "model_loading",
+              "model_provisioning",
+              "queue_full"
+            ]
+          }
+        },
+        "summary": "The rerank route to a backend: the same auth, routing, kind guard, and\ndominion queue admission as chat, for `kind = \"classifier\"` models.",
+        "tags": [
+          "relay"
+        ],
+        "x-runvil-loopback-trust": true,
+        "x-runvil-standard": "jina-cohere-rerank"
+      }
+    },
+    "/v1/tools/web_search": {
+      "post": {
+        "description": "# Errors\nReturns [`GatewayError::Unauthorized`] when the bearer token is absent or\nwrong, [`GatewayError::ToolNotConfigured`] when no `[tools.web_search]`\nsection is present, [`GatewayError::MalformedRequest`] when the request\nfails validation, and the upstream variants on a provider failure.",
+        "operationId": "post_v1_tools_web_search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSearchResponse"
+                }
+              }
+            },
+            "description": "The trimmed search results."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The body is not JSON this route accepts or failed the service's checks.",
+            "x-runvil-error-codes": [
+              "malformed_request"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The bearer key was missing or did not match `server.key`.",
+            "x-runvil-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "description": "No body. The host wall refused a request whose authority is not the bound loopback socket."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No `[tools.web_search]` section is configured.",
+            "x-runvil-error-codes": [
+              "not_found"
+            ]
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The search provider answered with this client error status, passed through.",
+            "x-runvil-error-codes": [
+              "upstream_client_error"
+            ]
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The search provider could not be reached, failed after the request left, answered with a server error, or sent a body that could not be decoded.",
+            "x-runvil-error-codes": [
+              "upstream_connect",
+              "upstream_error",
+              "upstream_protocol",
+              "upstream_transport"
+            ]
+          }
+        },
+        "summary": "The `POST /v1/tools/web_search` route.",
+        "tags": [
+          "web_search"
+        ],
+        "x-runvil-extension": true,
+        "x-runvil-feature": "web-search",
+        "x-runvil-loopback-trust": true,
+        "x-runvil-opt-in": false
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "sessionCookie": []
+    }
+  ],
+  "tags": [
+    {
+      "description": "The OpenAI passthrough surface: chat completions, embeddings, and rerank.",
+      "name": "relay"
+    },
+    {
+      "description": "Speech synthesis and the voice catalog.",
+      "name": "speech"
+    },
+    {
+      "description": "The model catalog.",
+      "name": "models"
+    },
+    {
+      "description": "The liveness probe.",
+      "name": "health"
+    },
+    {
+      "description": "The Brave-backed web search tool.",
+      "name": "web_search"
+    },
+    {
+      "description": "The local blob cache, which downloads and keeps files by SHA-256.",
+      "name": "cache"
+    },
+    {
+      "description": "Batch and realtime transcription.",
+      "name": "stt"
+    }
+  ]
+}

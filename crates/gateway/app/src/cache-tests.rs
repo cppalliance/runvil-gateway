@@ -177,3 +177,17 @@ async fn the_sse_stream_emits_the_latest_sample_when_the_reporter_dropped_before
         "the stream still ends with the join result's terminal event: {text}"
     );
 }
+
+/// The typed delete reply serializes as the `json!` literal it replaced.
+#[test]
+fn the_delete_reply_matches_the_literal_it_replaced() {
+    let deleted = CacheDeletedReply {
+        sha256: "ab".to_owned(),
+        status: "deleted",
+    };
+    assert_eq!(
+        serde_json::to_string(&deleted).expect("deleted serializes"),
+        serde_json::to_string(&serde_json::json!({"status": "deleted", "sha256": "ab"}))
+            .expect("literal serializes")
+    );
+}
