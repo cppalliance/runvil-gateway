@@ -177,3 +177,55 @@ async fn the_sse_stream_emits_the_latest_sample_when_the_reporter_dropped_before
         "the stream still ends with the join result's terminal event: {text}"
     );
 }
+
+/// The typed replies serialize as the `json!` literals they replaced, and
+/// the two path-bearing events that stay `json!` match their schema types
+/// for a UTF-8 path.
+#[test]
+fn the_cache_bodies_match_the_literals_they_replaced() {
+    let deleted = CacheDeletedReply {
+        sha256: "ab".to_owned(),
+        status: "deleted",
+    };
+    assert_eq!(
+        serde_json::to_string(&deleted).expect("deleted serializes"),
+        serde_json::to_string(&serde_json::json!({"status": "deleted", "sha256": "ab"}))
+            .expect("literal serializes")
+    );
+
+    let downloading = CacheDownloadEvent {
+        bytes: 3,
+        status: "downloading",
+        total: None,
+    };
+    assert_eq!(
+        serde_json::to_string(&downloading).expect("downloading serializes"),
+        serde_json::to_string(&serde_json::json!({
+            "status": "downloading",
+            "bytes": 3,
+            "total": null,
+        }))
+        .expect("literal serializes")
+    );
+
+    let path = std::path::PathBuf::from("/tmp/blob");
+    let ready = CacheReadyReply {
+        path: path.clone(),
+        status: "ready",
+    };
+    assert_eq!(
+        serde_json::to_string(&ready).expect("ready serializes"),
+        serde_json::to_string(&serde_json::json!({"path": path, "status": "ready"}))
+            .expect("literal serializes")
+    );
+
+    let error = CacheErrorEvent {
+        message: "nope".to_owned(),
+        status: "error",
+    };
+    assert_eq!(
+        serde_json::to_string(&error).expect("error serializes"),
+        serde_json::to_string(&serde_json::json!({"status": "error", "message": "nope"}))
+            .expect("literal serializes")
+    );
+}

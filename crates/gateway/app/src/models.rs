@@ -5,6 +5,7 @@ use axum::extract::State;
 use axum::http::Method;
 use axum::routing::get;
 use axum::{Json, Router};
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::AppState;
@@ -24,8 +25,8 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// The model-list wire response, including routed and active speech models.
-#[derive(Debug, Serialize)]
-struct CatalogModelsResponse {
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct CatalogModelsResponse {
     /// Always `"list"`.
     object: &'static str,
     /// Models currently accepting their respective request shape.
@@ -33,9 +34,9 @@ struct CatalogModelsResponse {
 }
 
 /// One routed inference model or active speech model.
-#[derive(Debug, Serialize)]
+#[derive(Debug, JsonSchema, Serialize)]
 #[serde(untagged)]
-enum CatalogModelInfo {
+pub(crate) enum CatalogModelInfo {
     /// Existing chat, embedding, classifier, or speech metadata.
     Inference(ModelInfo),
     /// Generic transcription metadata.
@@ -60,10 +61,12 @@ impl CatalogModelInfo {
 
 /// Speech metadata contains only fields meaningful to transcription clients.
 #[cfg(feature = "stt")]
-#[derive(Debug, Serialize)]
-struct SpeechCatalogModelInfo {
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct SpeechCatalogModelInfo {
     id: String,
     object: &'static str,
+    /// `transcription`.
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     kind: &'static str,
 }
 

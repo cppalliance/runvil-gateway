@@ -3,6 +3,8 @@
 use axum::http::Method;
 use axum::routing::get;
 use axum::{Json, Router};
+use schemars::JsonSchema;
+use serde::Serialize;
 
 use crate::AppState;
 use crate::registry::RouteInfo;
@@ -17,7 +19,21 @@ pub(crate) fn routes() -> Router<AppState> {
     Router::new().route(HEALTH.path, get(health))
 }
 
-/// Liveness probe; unauthenticated and always 200 while serving.
-async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "status": "serving" }))
+/// The `GET /health` body: `status` is `serving` while the gateway answers.
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct HealthReply {
+    /// `serving` while the gateway is answering requests.
+    status: &'static str,
 }
+
+/// Liveness probe: answers 200 with `status` set to `serving` and needs no
+/// credential. Like every route, it answers 403 while the gateway is bound to
+/// a loopback address and the request's host is neither that address nor
+/// `localhost` on the same port.
+async fn health() -> Json<HealthReply> {
+    Json(HealthReply { status: "serving" })
+}
+
+#[cfg(test)]
+#[path = "health-tests.rs"]
+mod tests;

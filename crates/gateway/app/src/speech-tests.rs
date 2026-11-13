@@ -7,6 +7,24 @@ use tower::ServiceExt;
 use crate::build_router;
 use crate::test_support::loopback_state;
 
+#[test]
+fn a_voice_entry_matches_the_literal_it_replaced() {
+    let voice = super::Voice {
+        id: "alloy".to_owned(),
+        name: "alloy".to_owned(),
+    };
+    let reply = super::VoicesReply {
+        voices: vec![voice],
+    };
+    assert_eq!(
+        serde_json::to_string(&reply).expect("the reply serializes"),
+        serde_json::to_string(&serde_json::json!({
+            "voices": [{ "id": "alloy", "name": "alloy" }]
+        }))
+        .expect("the literal serializes")
+    );
+}
+
 #[cfg(feature = "stt")]
 #[test]
 fn speech_snapshot_serializes_only_generic_facade_facts() {

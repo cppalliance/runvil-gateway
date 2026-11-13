@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 /// request is built. `never` and `always` mean the backend ignores a
 /// per-call switch; `switchable` means the client may emit
 /// `chat_template_kwargs.enable_thinking`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum ThinkingMode {
@@ -82,43 +82,52 @@ impl fmt::Display for ModelKind {
 /// can shape requests before sending them. The effort knobs are chat-only
 /// and require a `thinking` mode other than `never`; the `voices` list is
 /// speech-only.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, JsonSchema, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Capabilities {
     /// Max output tokens the model can emit per completion. Must not exceed
     /// `context` when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub max_output: Option<u32>,
     /// Sampling temperature applied when the caller omits one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub default_temperature: Option<f32>,
     /// Whether the model accepts image inputs. Defaults to false; a
     /// `[local_model.multimodal_projector]` companion implies true.
     #[serde(default)]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub images: bool,
     /// Whether the model can emit parallel tool calls. Defaults to false.
     #[serde(default)]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub parallel_tool_calls: bool,
     /// The reasoning-effort levels the model accepts. Empty means the model
     /// has no effort knob.
     #[serde(default)]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub effort_levels: Vec<String>,
     /// The effort level applied when the caller omits one; requires a
     /// non-empty `effort_levels` and must name a listed level.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub default_effort: Option<String>,
     /// Whether the model adaptively chooses how much to think per request;
     /// chat kind only. Defaults to false.
     #[serde(default)]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub adaptive_thinking: bool,
     /// The voices the model offers for speech synthesis; speech kind only.
     /// Empty means the model exposes no fixed voice list.
     #[serde(default)]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub voices: Vec<String>,
     /// The model's provider id, such as `xai`. It describes the model, not
     /// the endpoint the gateway reaches it through, and uses only lowercase
     /// letters, digits, `.`, `_`, and `-`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub provider: Option<String>,
 }
 
@@ -178,7 +187,7 @@ impl Capabilities {
 }
 
 /// One catalogued model, with Runvil extensions beside the OpenAI `id`.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, JsonSchema, Serialize)]
 pub struct ModelInfo {
     /// The caller-facing model name (`[[model]].name`).
     pub id: String,
@@ -187,12 +196,16 @@ pub struct ModelInfo {
     /// The workload this model serves (`"chat"`, `"embedding"`,
     /// `"classifier"`, `"speech"`, `"transcription"`, `"image"`,
     /// `"video"`).
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub kind: ModelKind,
     /// Prose describing the model for catalog consumers and semantic bind.
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub description: String,
     /// Context window size in tokens.
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub context: u32,
     /// Whether thinking tokens are never, always, or switchably available.
+    #[schemars(extend("x-runvil-extension" = true), extend("x-runvil-opt-in" = false))]
     pub thinking: ThinkingMode,
     /// Capability metadata (`max_output`, `images`, effort levels, and so
     /// on), flattened into the catalog entry.

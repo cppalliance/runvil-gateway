@@ -14,6 +14,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 mod backends;
+mod openapi;
 mod process;
 
 #[cfg(feature = "web-search")]
@@ -22,6 +23,7 @@ pub(crate) use backends::{
     RecordedRequest, Recorder, ReleaseTx, canned_reply, fake_backend, recording_backend,
     slow_fake_backend, spawn_backend,
 };
+pub(crate) use openapi::documented_responses;
 pub(crate) use process::GatewayProcess;
 
 /// Pinned tiny bge-small-en-v1.5 GGUF, used only by the ignored live-local

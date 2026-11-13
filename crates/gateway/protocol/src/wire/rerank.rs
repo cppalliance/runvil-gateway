@@ -1,11 +1,12 @@
 //! The rerank request and response bodies and their trust-boundary validation.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// An incoming rerank request (the llama-server/vLLM/Jina shape: a query and
 /// a document set in, ranked relevance scores out).
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct RerankRequest {
     /// The model name, resolved against the routing table.
     pub model: String,
@@ -56,7 +57,7 @@ impl RerankRequest {
 }
 
 /// An outgoing rerank response.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[non_exhaustive]
 pub struct RerankResponse {
     /// The model name, rewritten to the caller's requested name.

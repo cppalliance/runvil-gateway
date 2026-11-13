@@ -16,7 +16,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::{Error as SocketError, Message};
 
-use crate::support::{PHASE_TIMEOUT, TestServer, send_within};
+use crate::support::{PHASE_TIMEOUT, TestServer, documented_responses, send_within};
 
 mod capture;
 mod native;

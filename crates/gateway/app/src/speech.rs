@@ -14,6 +14,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use gateway_config::ModelKind;
 use gateway_protocol::ProtocolError;
+use schemars::JsonSchema;
+use serde::Serialize;
 
 use crate::AppState;
 use crate::auth::AuthedCaller;
@@ -189,11 +191,11 @@ fn relay_audio(
         rx.recv().await.map(|item| (item, rx))
     });
     let mut response = Response::new(Body::from_stream(relayed));
+    let fallback = || HeaderValue::from_static(speech_fallback_mime(format, stream_format));
     let content_type = if streamed.content_type.is_empty() {
-        speech_fallback_mime(format, stream_format)
+        fallback()
     } else {
-        HeaderValue::from_str(&streamed.content_type)
-            .unwrap_or_else(|_| speech_fallback_mime(format, stream_format))
+        HeaderValue::from_str(&streamed.content_type).unwrap_or_else(|_| fallback())
     };
     response.headers_mut().insert(CONTENT_TYPE, content_type);
     response
@@ -291,14 +293,14 @@ fn relay_terminal(message: &'static str) -> ProtocolError {
 /// omits it or sends an invalid one: the framing selector first, so an SSE
 /// stream is labeled `text/event-stream` and never an audio type, then the
 /// requested format's MIME type (the OpenAI spellings).
-fn speech_fallback_mime(
+pub(crate) fn speech_fallback_mime(
     format: SpeechResponseFormat,
     stream_format: Option<SpeechStreamFormat>,
-) -> HeaderValue {
+) -> &'static str {
     if matches!(stream_format, Some(SpeechStreamFormat::Sse)) {
-        return HeaderValue::from_static("text/event-stream");
+        return "text/event-stream";
     }
-    HeaderValue::from_static(match format {
+    match format {
         SpeechResponseFormat::Mp3 => "audio/mpeg",
         SpeechResponseFormat::Opus => "audio/ogg",
         SpeechResponseFormat::Aac => "audio/aac",
@@ -308,7 +310,27 @@ fn speech_fallback_mime(
         // `SpeechResponseFormat` is `#[non_exhaustive]` in `gateway-protocol`;
         // an encoding without a spelling here is labeled as opaque bytes.
         _ => "application/octet-stream",
-    })
+    }
+}
+
+/// One voice in the `GET /v1/audio/voices` body.
+///
+/// `name` mirrors `id`: the catalog configures voices as bare strings with
+/// no separate display name.
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct Voice {
+    /// The voice identifier clients send as `voice`.
+    id: String,
+    /// The display name. It mirrors `id`.
+    name: String,
+}
+
+/// The `GET /v1/audio/voices` body: the deduplicated, sorted voices under
+/// `voices`.
+#[derive(Debug, JsonSchema, Serialize)]
+pub(crate) struct VoicesReply {
+    /// The active profile's speech voices.
+    voices: Vec<Voice>,
 }
 
 /// Bearer-authed union of the active profile's speech voices for catalog
@@ -325,7 +347,7 @@ fn speech_fallback_mime(
 async fn audio_voices(
     State(state): State<AppState>,
     _caller: AuthedCaller,
-) -> Result<Json<serde_json::Value>, GatewayError> {
+) -> Result<Json<VoicesReply>, GatewayError> {
     let routing = state.routing().await;
     let voices = routing
         .models()
@@ -334,9 +356,12 @@ async fn audio_voices(
         .flat_map(|model| model.capabilities.voices().iter())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .map(|voice| serde_json::json!({ "id": voice, "name": voice }))
+        .map(|voice| Voice {
+            id: voice.clone(),
+            name: voice.clone(),
+        })
         .collect::<Vec<_>>();
-    Ok(Json(serde_json::json!({ "voices": voices })))
+    Ok(Json(VoicesReply { voices }))
 }
 
 /// Generic speech lifecycle facts included in Gateway operational status.

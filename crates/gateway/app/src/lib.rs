@@ -30,9 +30,10 @@
 //! `local` builds - reads secrets in plaintext, writes files, or launches
 //! processes, so it sits behind the shared loopback wall from
 //! `shared-loopback` in every build. The one enumerable list of routes,
-//! with the tier each belongs to, is the registry (`registry::all`); it
-//! is logged at debug level when the router is built and swept by the
-//! tests that prove each tier's wall.
+//! with the tier each belongs to, is the registry (`registry::all`). It
+//! names the speech crate's two routes and the config UI's assets along
+//! with every area module's, it is logged at debug level when the router
+//! is built, and the tests sweep it to prove each tier's wall.
 //!
 //! With `[server] trust_loopback` on (the default), a loopback peer
 //! presenting no credential is admitted to every route unless its Fetch
@@ -493,3 +494,6 @@ fn build_router(state: AppState, bound: Option<std::net::SocketAddr>) -> Router 
 #[cfg(test)]
 #[path = "loopback-tests.rs"]
 mod loopback_tests;
+
+#[cfg(test)]
+mod openapi;

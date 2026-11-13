@@ -10,6 +10,7 @@ publish = false
 gateway-config.workspace = true
 gateway-protocol.workspace = true
 reqwest.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

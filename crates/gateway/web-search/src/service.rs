@@ -7,6 +7,7 @@
 //! returns a trimmed result set. The gateway owns the route, the bearer-auth
 //! check, and the profile-switch reload; this crate owns everything past auth.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use gateway_config::{Secret, WebSearchConfig};
@@ -80,7 +81,7 @@ impl WebSearchState {
 }
 
 /// The request body for `POST /v1/tools/web_search`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WebSearchRequest {
     /// The search query.
@@ -111,7 +112,7 @@ pub struct WebSearchRequest {
 }
 
 /// The response body for `POST /v1/tools/web_search`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema, Serialize)]
 pub struct WebSearchResponse {
     /// The trimmed request query that produced these results.
     pub query: String,
@@ -120,7 +121,7 @@ pub struct WebSearchResponse {
 }
 
 /// One search result, trimmed to the fields the executor needs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema, Serialize)]
 pub struct SearchResult {
     /// The result's title.
     pub title: String,

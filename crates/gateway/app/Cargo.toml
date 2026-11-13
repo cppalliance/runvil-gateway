@@ -64,6 +64,7 @@ gateway-progress.workspace = true
 # `/v1/audio/transcriptions` route), behind the default-on `stt` feature.
 gateway-stt = { workspace = true, optional = true }
 gateway-web-search = { workspace = true, optional = true }
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -146,6 +147,9 @@ test-fixtures = ["local", "gateway-local/test-fixtures", "dep:anyhow"]
 
 [dev-dependencies]
 anyhow.workspace = true
+jsonschema = { workspace = true }
+proc-macro2.workspace = true
+syn.workspace = true
 # The crate dev-depends on itself so every test target builds the library
 # with test-fixtures enabled, without gate commands needing a --features
 # flag: the integration suites drive the speech relay's test-scaled bounds.
