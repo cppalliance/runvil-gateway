@@ -1,0 +1,13 @@
+# Nothing is required here. A report can be pasted as is.
+# This form never applies the `agent-ready` label. A person adds it at triage.
+name: Bug report
+description: Paste a bug. Nothing is required.
+type: Bug
+body:
+  - type: textarea
+    id: report
+    attributes:
+      label: What happened?
+      description: "Paste anything: the error, what you did, what you expected, logs. Remove keys and tokens first."
+    validations:
+      required: false
