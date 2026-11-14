@@ -39,7 +39,13 @@ pub enum ProtocolError {
     UpstreamProtocol(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// The upstream backend returned a non-success status.
-    #[error("upstream returned {status}")]
+    ///
+    /// The display names the upstream's OpenAI error `code` when the body
+    /// carries one that is a plain identifier (for example
+    /// `upstream returned 400 (context_length_exceeded)`), so a client can
+    /// tell a context overflow or a spent quota from other refusals. The
+    /// upstream's message text is never shown: it may echo prompt content.
+    #[error("upstream returned {status}{}", upstream_code_suffix(body))]
     UpstreamStatus {
         /// The status code the backend returned.
         status: u16,
@@ -52,6 +58,47 @@ pub enum ProtocolError {
     /// but the backing upstream has no implementation for it.
     #[error("model {0} is not available for this workload")]
     ModelUnavailable(String),
+
+    /// The request is valid chat completions, but the resolved upstream's
+    /// protocol has no equivalent for part of it (for example a legacy
+    /// `function` message sent to a Responses endpoint). Nothing was sent.
+    #[error("this request cannot be sent to the model's endpoint: {0}")]
+    UnsupportedRequest(&'static str),
+
+    /// The endpoint's credential source has no usable credential (for
+    /// example a ChatGPT sign-in that is signed out or needs repeating).
+    /// Nothing was sent. `code` is a stable identifier a client can show
+    /// or act on.
+    #[error("the model's endpoint has no usable credential ({code})")]
+    CredentialUnavailable {
+        /// Why, as a stable identifier.
+        code: &'static str,
+    },
+}
+
+/// ` (code)` when `body` is an OpenAI error envelope whose `error.code` is a
+/// plain identifier of at most 64 characters, and nothing otherwise.
+fn upstream_code_suffix(body: &str) -> String {
+    let code = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/error/code")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        });
+    match code {
+        Some(code)
+            if !code.is_empty()
+                && code.len() <= 64
+                && code
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) =>
+        {
+            format!(" ({code})")
+        }
+        _ => String::new(),
+    }
 }
 
 impl ProtocolError {
@@ -140,6 +187,18 @@ impl ProtocolError {
                 reqwest::StatusCode::BAD_REQUEST,
                 "invalid_request_error",
                 "model_unavailable",
+            ),
+            ProtocolError::UnsupportedRequest(_) => (
+                reqwest::StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                "unsupported_for_endpoint",
+            ),
+            // 403, not 401: a 401 would tell the caller its own gateway key
+            // is wrong, which it is not.
+            ProtocolError::CredentialUnavailable { code } => (
+                reqwest::StatusCode::FORBIDDEN,
+                "invalid_request_error",
+                code,
             ),
         }
     }
@@ -253,6 +312,32 @@ mod tests {
         // local child respawn (UP-004, UPSTREAM-003).
         assert!(!matches!(error, ProtocolError::UpstreamTransport(_)));
         assert!(error.source().is_some());
+    }
+
+    #[test]
+    fn the_message_names_a_plain_upstream_code_and_nothing_else() {
+        let named = ProtocolError::upstream_status(
+            400,
+            r#"{"error":{"code":"context_length_exceeded","message":"secret prompt text"}}"#
+                .to_owned(),
+        );
+        assert_eq!(
+            named.to_string(),
+            "upstream returned 400 (context_length_exceeded)"
+        );
+        assert!(!named.envelope().to_string().contains("secret prompt text"));
+
+        for body in [
+            r#"{"error":{"code":"has spaces and prose"}}"#,
+            r#"{"error":{"code":"line
+break"}}"#,
+            r#"{"error":{"code":42}}"#,
+            r#"{"error":"just a string"}"#,
+            "not json",
+        ] {
+            let plain = ProtocolError::upstream_status(429, body.to_owned());
+            assert_eq!(plain.to_string(), "upstream returned 429", "body: {body}");
+        }
     }
 
     #[test]

@@ -1,7 +1,9 @@
-//! The backend-facing side: the [`Upstream`] trait and its OpenAI passthrough.
+//! The backend-facing side: the [`Upstream`] trait and its HTTP backends.
 //!
-//! This crate implements the trait once, as [`OpenAiUpstream`], which forwards
-//! the OpenAI shape unchanged.
+//! This crate implements the trait twice: [`OpenAiUpstream`] forwards the
+//! chat completions shape unchanged, and [`ResponsesUpstream`] translates it
+//! to and from the OpenAI Responses API. A [`BearerSource`] supplies the
+//! Responses backend's credential for each request.
 
 use std::fmt;
 
@@ -17,7 +19,12 @@ use crate::wire::{
     RerankResponse, SpeechRequest,
 };
 
+mod bearer;
 mod openai;
+mod responses;
+
+pub use self::bearer::{BearerSource, StaticBearer};
+pub use self::responses::ResponsesUpstream;
 
 /// An opened streaming chat completion: the upstream response headers worth
 /// forwarding to the client, plus the validated chunk stream.
