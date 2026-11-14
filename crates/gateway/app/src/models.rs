@@ -70,13 +70,20 @@ struct SpeechCatalogModelInfo {
 /// Bearer-authed catalog of configured models for catalog bind.
 async fn list_models(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    caller: AuthedCaller,
 ) -> Result<Json<CatalogModelsResponse>, GatewayError> {
+    // A model served on a ChatGPT plan is listed only for the caller that
+    // may use it. The test is the endpoint's credential source, and it
+    // never asks the broker for anything.
+    let plan_visible = state.chatgpt.plan_visible(&caller);
     let live = state.live.read().await;
     let data = live
         .routing
         .models()
         .iter()
+        .filter(|model| {
+            plan_visible || model.endpoint.source != crate::routing::CredentialSource::ChatgptPlan
+        })
         .map(|model| {
             CatalogModelInfo::inference(ModelInfo {
                 id: model.name.clone(),

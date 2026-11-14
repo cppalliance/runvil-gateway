@@ -151,6 +151,20 @@ impl Config {
         Self::parse_toml(raw).map_err(crate::api_error::ConfigError::from)
     }
 
+    /// Interpolates `${VAR}` through `lookup`, parses, and validates a TOML
+    /// configuration string without touching the filesystem.
+    ///
+    /// # Errors
+    /// Returns [`ConfigError`](crate::ConfigError) for a malformed or unresolved
+    /// interpolation, invalid TOML, or a failed semantic check.
+    pub fn from_toml_with_lookup(
+        raw: &str,
+        path: Option<&Path>,
+        lookup: VarLookupFn<'_>,
+    ) -> Result<Config, crate::api_error::ConfigError> {
+        Self::parse_toml_with_lookup(raw, path, lookup).map_err(crate::api_error::ConfigError::from)
+    }
+
     /// Returns a clone with `name` selected from the already-loaded catalog,
     /// or with no profile selected when `name` is `None`.
     ///

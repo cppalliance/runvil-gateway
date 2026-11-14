@@ -96,12 +96,15 @@ async fn a_routing_miss_on_a_loading_model_is_model_loading_not_not_found() {
         .await
         .loading
         .insert("pending-model".to_owned());
-    let loading = crate::relay::resolve_routed_model(&state, "pending-model").await;
+    let loading =
+        crate::relay::resolve_routed_model(&state, &axum::http::HeaderMap::new(), "pending-model")
+            .await;
     assert!(
         matches!(&loading, Err(crate::error::GatewayError::ModelLoading(name)) if name == "pending-model"),
         "a loading model resolves to ModelLoading: {loading:?}"
     );
-    let unknown = crate::relay::resolve_routed_model(&state, "ghost").await;
+    let unknown =
+        crate::relay::resolve_routed_model(&state, &axum::http::HeaderMap::new(), "ghost").await;
     assert!(
         matches!(unknown, Err(crate::error::GatewayError::UnknownModel(_))),
         "a name outside loading keeps its 404: {unknown:?}"

@@ -14,6 +14,9 @@ pub(crate) enum Phase {
     /// A config apply's commit, before it takes the apply lock: the
     /// captured shadows are not yet promoted and nothing is live.
     ApplyCommit,
+    /// `POST /admin/chatgpt/models/enable` right before committing the
+    /// prepared config to disk and live routing.
+    ChatGptEnableCommit,
     /// `GET /admin/config-pending` immediately after its single read of the
     /// effective config file, before parsing and hashing that snapshot.
     PendingConfigAfterRead,

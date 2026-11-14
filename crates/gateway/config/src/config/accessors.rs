@@ -7,7 +7,7 @@
 use std::net::SocketAddr;
 
 use super::{
-    Config, DominionConfig, DominionKind, EndpointConfig, LlamaBackend, LocalConfig,
+    Config, DominionConfig, DominionKind, EndpointAuth, EndpointConfig, LlamaBackend, LocalConfig,
     LocalModelConfig, ModelConfig, ProfileConfig, Protocol, QueuePolicy, SearchProvider, Secret,
     ServerConfig, SttModelConfig, SttPipelineConfig, ToolsConfig, WebSearchConfig,
 };
@@ -269,16 +269,24 @@ impl EndpointConfig {
         self.protocol
     }
 
-    /// Returns the backend base URL.
+    /// Returns where this endpoint's credential comes from.
     #[must_use]
-    pub fn base_url(&self) -> &str {
-        &self.base_url
+    pub fn auth(&self) -> EndpointAuth {
+        self.auth
     }
 
-    /// Returns the credential sent to this backend.
+    /// Returns the backend base URL. Empty on a ChatGPT-plan endpoint,
+    /// which has none to configure.
     #[must_use]
-    pub fn api_key(&self) -> &Secret {
-        &self.api_key
+    pub fn base_url(&self) -> &str {
+        self.base_url.as_deref().unwrap_or_default()
+    }
+
+    /// Returns the credential sent to this backend. `None` on a
+    /// ChatGPT-plan endpoint, whose credential the gateway holds.
+    #[must_use]
+    pub fn api_key(&self) -> Option<&Secret> {
+        self.api_key.as_ref()
     }
 
     /// Returns the remote dominion id (`[[dominion]]`) whose shared limit

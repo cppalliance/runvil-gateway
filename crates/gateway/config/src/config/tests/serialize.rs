@@ -228,6 +228,7 @@ fn enums_round_trip_with_their_toml_spellings() {
     }
 
     check(Protocol::Openai, "openai");
+    check(Protocol::OpenaiResponses, "openai-responses");
     check(DominionKind::Remote, "remote");
     check(DominionKind::Local, "local");
     check(QueuePolicy::Queue, "queue");

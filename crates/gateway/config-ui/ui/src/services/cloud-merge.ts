@@ -67,10 +67,11 @@ export function mergeCloudModel(
   }
 
   const endpoints = arrayOf(config, "endpoint");
-  if (!endpoints.some((item) => item["id"] === provider)) {
+  const target = resolveProviderEndpoint(endpoints, provider);
+  if (target.create) {
     const keyVar = slice.env_vars.find((variable) => variable.role === "key");
     endpoints.push({
-      id: provider,
+      id: target.id,
       protocol: "openai",
       base_url: slice.openai_base_url,
       ...(keyVar ? { api_key: `\${${keyVar.name}}` } : {}),
@@ -84,7 +85,7 @@ export function mergeCloudModel(
     context,
     thinking: thinkingMode(entry.thinking),
     upstream: entry.id,
-    endpoints: [provider],
+    endpoints: [target.id],
     images: entry.images,
     adaptive_thinking: entry.thinking.adaptive,
     effort_levels: entry.effort_levels,
@@ -97,6 +98,28 @@ export function mergeCloudModel(
   }
   arrayOf(config, "model").push(model);
   return config;
+}
+
+/**
+ * Picks an API-key endpoint id for `provider`, reusing an existing ordinary
+ * endpoint when one matches and stepping past any `auth = "chatgpt-plan"`
+ * endpoint so Cloud sheet models never hijack or duplicate a plan endpoint.
+ */
+function resolveProviderEndpoint(
+  endpoints: readonly EntryData[],
+  provider: string,
+): { id: string; create: boolean } {
+  for (let index = 0; ; index += 1) {
+    const candidate =
+      index === 0 ? provider : index === 1 ? `${provider}-api` : `${provider}-api-${index}`;
+    const existing = endpoints.find((item) => item["id"] === candidate);
+    if (!existing) {
+      return { id: candidate, create: true };
+    }
+    if (existing["auth"] !== "chatgpt-plan") {
+      return { id: candidate, create: false };
+    }
+  }
 }
 
 /** One keyed array of the config document, created when absent. */

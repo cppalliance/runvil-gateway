@@ -13,6 +13,9 @@ mod in_flight;
 #[path = "config_apply-tests-rollback.rs"]
 mod rollback;
 
+#[path = "config_apply-tests-plan.rs"]
+mod plan;
+
 const CONFIG: &str = r#"
 config-version = 0
 

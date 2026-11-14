@@ -63,7 +63,7 @@ api_key = "backend-key"
     assert_eq!(endpoint.id(), "e");
     assert_eq!(endpoint.protocol(), Protocol::Openai);
     assert_eq!(endpoint.base_url(), "http://127.0.0.1:9");
-    assert_eq!(endpoint.api_key().expose(), "backend-key");
+    assert_eq!(endpoint.api_key().map(Secret::expose), Some("backend-key"));
 }
 
 #[test]

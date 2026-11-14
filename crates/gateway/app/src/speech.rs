@@ -62,7 +62,7 @@ async fn audio_speech(
     request
         .validate()
         .map_err(|reason| GatewayError::MalformedRequest(reason.to_owned()))?;
-    let model = resolve_routed_model(&state, &request.model).await?;
+    let model = resolve_routed_model(&state, &caller, &request.model).await?;
     crate::routing::require_kind(&model, ModelKind::Speech)?;
     // A voice the model does not offer is a client error, so it is judged
     // before queue admission: a 400 never burns a queue slot.

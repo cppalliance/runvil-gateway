@@ -434,7 +434,14 @@ test("an endpoint's api_key stays *** through a save and Change reveals the inpu
 
   const protocol = card.querySelector(".field-row[data-key='protocol'] .select");
   assert.equal(protocol.value, "openai");
-  assert.ok(protocol.disabled, "the protocol dropdown is locked");
+  assert.ok(!protocol.disabled, "the protocol dropdown offers both protocols");
+  protocol.click();
+  const listbox = dom.window.document.getElementById(protocol.getAttribute("aria-controls") ?? `${protocol.id}-listbox`);
+  assert.deepEqual(
+    [...listbox.querySelectorAll("[role='option']")].map((option) => option.dataset.value),
+    ["openai", "openai-responses"],
+  );
+  protocol.click();
   assert.equal(
     card.querySelector(".secret-input"),
     null,
@@ -671,4 +678,146 @@ test("a non-numeric entry in a numeric field raises an alert under the input and
   assert.equal(fixed.querySelector(".field-error"), null, "a valid number clears the alert");
   assert.equal(fixed.querySelector("input").getAttribute("aria-invalid"), null);
   assert.equal(fixed.querySelector("input").value, "9");
+});
+
+test("a chatgpt-plan endpoint hides URL and API key inputs, states its OpenAI-only plan auth, and saves without base_url or api_key", async () => {
+  const config = modelsFixture();
+  config.dominion.push({
+    id: "pool-r",
+    kind: "remote",
+    max_queue: 100,
+    policy: "queue",
+    fair_scheduling: true,
+  });
+  config.endpoint.unshift({
+    id: "chatgpt",
+    protocol: "openai-responses",
+    auth: "chatgpt-plan",
+    dominion: null,
+  });
+  config.model.push({
+    name: "gpt-plan",
+    kind: "chat",
+    description: "Plan model",
+    context: 128000,
+    thinking: "always",
+    upstream: "gpt-6.1-sol",
+    endpoints: ["chatgpt"],
+    images: true,
+    parallel_tool_calls: true,
+    effort_levels: ["low", "high"],
+    default_effort: "high",
+  });
+  const stub = fixtureStub({ config });
+  const { dom, root } = await bootApp({ key: "k", stub });
+
+  navigate(dom, "#/settings/endpoints");
+  await settle();
+  const card = root.querySelector(".entry-card[data-entry='endpoint:chatgpt']");
+  assert.ok(card, "the chatgpt-plan endpoint card renders");
+  assert.equal(
+    card.querySelector(".entry-badge")?.textContent,
+    "ChatGPT plan",
+    "the collapsed card identifies the plan endpoint",
+  );
+  assert.match(card.querySelector(".used-by-chip").title, /model 'gpt-plan'/);
+
+  card.querySelector(".entry-toggle").click();
+  const protocol = card.querySelector(".field-row[data-key='protocol'] .select");
+  assert.equal(protocol.value, "openai-responses");
+  assert.ok(protocol.disabled, "protocol is locked to openai-responses on a plan endpoint");
+  assert.equal(
+    card.querySelector(".field-row[data-key='base_url']"),
+    null,
+    "a plan endpoint renders no base_url input",
+  );
+  assert.equal(
+    card.querySelector(".field-row[data-key='api_key']"),
+    null,
+    "a plan endpoint renders no api_key input",
+  );
+  assert.equal(card.querySelector(".secret-input"), null);
+  assert.equal(card.querySelector(".secret-change"), null);
+  assert.match(
+    card.querySelector(".plan-endpoint-note")?.textContent ?? "",
+    /signed-in ChatGPT plan.*OpenAI only/,
+  );
+
+  chooseDropdown(card, "dominion", "pool-r");
+  await settle();
+  root.querySelector(".entry-card[data-entry='endpoint:chatgpt'] .card-save").click();
+  await settle();
+
+  const bodies = putBodies(stub, "/admin/config");
+  assert.equal(bodies.length, 1);
+  const savedPlan = bodies[0].endpoint.find((entry) => entry.id === "chatgpt");
+  assert.deepEqual(savedPlan, {
+    id: "chatgpt",
+    protocol: "openai-responses",
+    auth: "chatgpt-plan",
+    dominion: "pool-r",
+  });
+  assert.equal("base_url" in savedPlan, false);
+  assert.equal("api_key" in savedPlan, false);
+  assert.equal(
+    stub.calls.some((call) => call.url.includes("/admin/chatgpt")),
+    false,
+    "the browser UI makes no /admin/chatgpt/* requests",
+  );
+});
+
+test("unrelated saves across settings and sibling endpoints never add base_url or api_key to a chatgpt-plan endpoint", async () => {
+  const config = modelsFixture();
+  config.endpoint.unshift({
+    id: "chatgpt",
+    protocol: "openai-responses",
+    auth: "chatgpt-plan",
+    dominion: null,
+  });
+  const stub = fixtureStub({ config });
+  const { dom, root } = await bootApp({ key: "k", stub });
+
+  // 1. Save [server] on the Gateway panel.
+  navigate(dom, "#/settings/gateway");
+  await settle();
+  changeValue(dom, root.querySelector(".field-row[data-key='bind'] input"), "127.0.0.1:9090");
+  await settle();
+  root.querySelector(".card-save").click();
+  await settle();
+
+  // 2. Edit and save the sibling API-key endpoint.
+  navigate(dom, "#/settings/endpoints");
+  await settle();
+  const sibling = root.querySelector(".entry-card[data-entry='endpoint:openai']");
+  sibling.querySelector(".entry-toggle").click();
+  changeValue(
+    dom,
+    sibling.querySelector(".field-row[data-key='base_url'] input"),
+    "https://proxy.example/v1",
+  );
+  await settle();
+  root.querySelector(".entry-card[data-entry='endpoint:openai'] .card-save").click();
+  await settle();
+
+  // 3. Edit and save a model on the Models view.
+  navigate(dom, "#/local/llama-leaf");
+  await settle();
+  changeValue(dom, root.querySelector(".field-row[data-key='description'] textarea"), "tuned");
+  await settle();
+  root.querySelector(".detail-save").click();
+  await settle();
+
+  const bodies = putBodies(stub, "/admin/config");
+  assert.equal(bodies.length, 3, "all three unrelated saves staged cleanly");
+  for (const body of bodies) {
+    const plan = body.endpoint.find((entry) => entry.id === "chatgpt");
+    assert.deepEqual(plan, {
+      id: "chatgpt",
+      protocol: "openai-responses",
+      auth: "chatgpt-plan",
+      dominion: null,
+    });
+    assert.equal("base_url" in plan, false);
+    assert.equal("api_key" in plan, false);
+  }
 });

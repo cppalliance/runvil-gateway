@@ -224,6 +224,31 @@ impl GatewayError {
                 "server_error",
                 "cloud_models_unavailable",
             ),
+            Self::OwnerProofRequired => (
+                StatusCode::FORBIDDEN,
+                "invalid_request_error",
+                "owner_proof_required",
+            ),
+            Self::ChatGptPlanRunvilOnly => (
+                StatusCode::FORBIDDEN,
+                "invalid_request_error",
+                "chatgpt_plan_runvil_only",
+            ),
+            Self::ChatGptPlanLoopbackOnly => (
+                StatusCode::FORBIDDEN,
+                "invalid_request_error",
+                "chatgpt_plan_loopback_only",
+            ),
+            Self::ChatGptUnavailable(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "chatgpt_unavailable",
+            ),
+            Self::ConfigHasPendingChanges => (
+                StatusCode::CONFLICT,
+                "invalid_request_error",
+                "config_has_pending_changes",
+            ),
             Self::ConfigRevisionRequired => (
                 StatusCode::PRECONDITION_REQUIRED,
                 "invalid_request_error",
@@ -234,6 +259,30 @@ impl GatewayError {
                 "invalid_request_error",
                 "config_conflict",
             ),
+            Self::ChatGptSignInChanged => (
+                StatusCode::CONFLICT,
+                "invalid_request_error",
+                "chatgpt_sign_in_changed",
+            ),
+            Self::ChatGpt(error) => {
+                use gateway_chatgpt_plan::plan::PlanError;
+                let status = match error {
+                    // The issuer is unreachable or failing.
+                    PlanError::OAuth(_) => StatusCode::BAD_GATEWAY,
+                    PlanError::Store(_) | PlanError::Interrupted(_) => {
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                    // The caller asked for something the sign-in's state
+                    // does not allow.
+                    _ => StatusCode::CONFLICT,
+                };
+                let kind = if status.is_server_error() {
+                    "server_error"
+                } else {
+                    "invalid_request_error"
+                };
+                (status, kind, error.code())
+            }
         }
     }
 }

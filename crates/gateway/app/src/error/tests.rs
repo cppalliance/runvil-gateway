@@ -425,3 +425,54 @@ fn a_cause_the_outer_message_already_includes_renders_once() {
         "a cause that renders as nothing adds no trailing separator"
     );
 }
+
+#[test]
+fn chatgpt_diagnostics_name_requirement_or_phase_without_leaking_sources() {
+    let owner = GatewayError::OwnerProofRequired;
+    let owner_msg = owner.to_string();
+    assert!(owner_msg.contains("X-Runvil-Owner-Proof"));
+    assert!(owner_msg.contains("current boot"));
+    assert!(owner_msg.contains("absent or invalid"));
+    assert_eq!(
+        owner.classify(),
+        (
+            StatusCode::FORBIDDEN,
+            "invalid_request_error",
+            "owner_proof_required"
+        )
+    );
+
+    let interrupted = GatewayError::ChatGpt(gateway_chatgpt_plan::plan::PlanError::Interrupted(
+        "token refresh task stopped",
+    ));
+    assert!(
+        interrupted
+            .to_string()
+            .contains("token refresh task stopped")
+    );
+    assert_eq!(
+        interrupted.classify(),
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            "chatgpt_sign_in_failed"
+        )
+    );
+
+    let io_err = GatewayError::ChatGpt(gateway_chatgpt_plan::plan::PlanError::Store(
+        gateway_chatgpt_plan::store::StoreError::Io {
+            operation: "read record file",
+            source: std::io::Error::other("internal-secret-marker"),
+        },
+    ));
+    let wire_message = io_err.envelope()["error"]["message"]
+        .as_str()
+        .expect("message")
+        .to_owned();
+    assert!(wire_message.contains("read record file"));
+    assert!(!wire_message.contains("internal-secret-marker"));
+    assert_eq!(
+        io_err.source().map(ToString::to_string).as_deref(),
+        Some("internal-secret-marker")
+    );
+}

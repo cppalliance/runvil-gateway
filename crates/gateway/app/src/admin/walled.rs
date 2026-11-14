@@ -15,6 +15,7 @@
 
 #[cfg(feature = "local")]
 mod chat_templates;
+mod chatgpt;
 pub(crate) mod cloud_models;
 mod config;
 mod config_apply;
@@ -55,7 +56,8 @@ pub(crate) fn routes() -> Router<AppState> {
         .merge(env_file::routes())
         .merge(cloud_models::routes())
         .merge(reveal::routes())
-        .merge(hf::routes());
+        .merge(hf::routes())
+        .merge(chatgpt::routes());
     // The template, orphan, and model-info routes read local-inference
     // facilities, so they exist only in builds with local inference.
     #[cfg(feature = "local")]
@@ -90,6 +92,7 @@ pub(crate) fn registry() -> Vec<RouteInfo> {
         cloud_models::ROUTES,
         reveal::ROUTES,
         hf::ROUTES,
+        chatgpt::ROUTES,
     ]
     .concat();
     #[cfg(feature = "local")]

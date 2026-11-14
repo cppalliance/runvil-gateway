@@ -870,6 +870,36 @@ export function gatewayStub({
             422,
           );
         }
+        for (const entry of Array.isArray(body.endpoint) ? body.endpoint : []) {
+          if (entry && typeof entry === "object" && entry.auth === "chatgpt-plan") {
+            if (entry.protocol !== "openai-responses") {
+              return jsonResponse(
+                {
+                  error: {
+                    message: `endpoint ${entry.id} has auth = "chatgpt-plan", which needs protocol = "openai-responses"`,
+                    type: "invalid_request_error",
+                    code: "config_write_rejected",
+                  },
+                },
+                422,
+              );
+            }
+            for (const forbidden of ["base_url", "api_key"]) {
+              if (forbidden in entry) {
+                return jsonResponse(
+                  {
+                    error: {
+                      message: `endpoint ${entry.id} has auth = "chatgpt-plan" and must not set ${forbidden}`,
+                      type: "invalid_request_error",
+                      code: "config_write_rejected",
+                    },
+                  },
+                  422,
+                );
+              }
+            }
+          }
+        }
         // The boot-owned [server] section survives in the pending view when the body omits it.
         if (!("server" in body) && "server" in state.pending) {
           body.server = structuredClone(state.pending.server);

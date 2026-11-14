@@ -279,6 +279,32 @@ pub(crate) enum GatewayError {
     #[non_exhaustive]
     #[error("cloud provider model sheet unavailable: {0}")]
     CloudModelsUnavailable(String),
+
+    /// The route manages a ChatGPT sign-in and the caller did not present
+    /// this boot's `X-Runvil-Owner-Proof` header.
+    #[error(
+        "this route requires a valid X-Runvil-Owner-Proof header for the current boot; supplied proof is absent or invalid"
+    )]
+    OwnerProofRequired,
+
+    /// A model served on a user's ChatGPT plan, asked for by a caller that
+    /// is not Runvil's own client.
+    #[error("this model runs on a ChatGPT plan, which only Runvil's own client may use")]
+    ChatGptPlanRunvilOnly,
+
+    /// A model served on a user's ChatGPT plan, asked of a gateway that
+    /// listens beyond loopback.
+    #[error("this model runs on a ChatGPT plan, which a gateway serves on loopback only")]
+    ChatGptPlanLoopbackOnly,
+
+    /// The gateway cannot hold a ChatGPT sign-in; the message says why.
+    #[error("ChatGPT sign-in is unavailable: {0}")]
+    ChatGptUnavailable(String),
+
+    /// A direct configuration write found unapplied `.next` drafts staged.
+    #[error("configuration has unapplied pending changes; apply or revert them first")]
+    ConfigHasPendingChanges,
+
     /// `PUT /admin/config` arrived without a `revision` precondition (neither
     /// body `revision` nor `If-Match` / `x-config-revision`).
     #[error("config save requires a revision precondition; reload the page before saving")]
@@ -288,6 +314,15 @@ pub(crate) enum GatewayError {
     /// matches the configuration on disk.
     #[error("configuration changed on disk since this page loaded; reload the page before saving")]
     ConfigConflict,
+
+    /// The ChatGPT sign-in changed between fetching plan models and writing
+    /// configuration.
+    #[error("the ChatGPT sign-in changed while fetching models; try again")]
+    ChatGptSignInChanged,
+
+    /// The ChatGPT sign-in broker refused or failed.
+    #[error(transparent)]
+    ChatGpt(#[from] gateway_chatgpt_plan::plan::PlanError),
 }
 
 impl From<crate::queue::AdmitError> for GatewayError {

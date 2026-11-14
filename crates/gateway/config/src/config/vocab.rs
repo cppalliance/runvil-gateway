@@ -4,13 +4,47 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// The wire protocol an endpoint speaks. The OpenAI shape is the only one.
+/// The wire protocol an endpoint speaks upstream. Callers always speak chat
+/// completions to the gateway; this names what the gateway speaks to the
+/// backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum Protocol {
-    /// The OpenAI `/chat/completions` shape.
+    /// The OpenAI `/chat/completions` shape, forwarded unchanged.
     Openai,
+    /// The OpenAI `/responses` shape. The gateway translates each chat
+    /// completion to a Responses request and the Responses event stream
+    /// back to chat completion chunks, so callers see no difference.
+    #[serde(rename = "openai-responses")]
+    OpenaiResponses,
+}
+
+/// Where an endpoint's credential comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EndpointAuth {
+    /// The endpoint's own `api_key`. The default when `auth` is absent.
+    #[default]
+    #[serde(rename = "api-key")]
+    ApiKey,
+    /// A user's ChatGPT sign-in, held by the gateway. The endpoint sets
+    /// neither `base_url` nor `api_key`: the gateway sends the plan's
+    /// credential to OpenAI's API and nowhere else, and only for Runvil's
+    /// own client.
+    #[serde(rename = "chatgpt-plan")]
+    ChatgptPlan,
+}
+
+impl EndpointAuth {
+    /// Whether this is the default, which a serialized endpoint omits.
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if passes a reference"
+    )]
+    pub(crate) fn is_api_key(&self) -> bool {
+        *self == EndpointAuth::ApiKey
+    }
 }
 
 /// Whether a dominion pools remote providers or local GPUs managed by the
