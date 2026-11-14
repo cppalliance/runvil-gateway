@@ -117,6 +117,12 @@ impl Config {
         }
     }
 
+    /// Exact raw UTF-8 TOML bytes from which this configuration was parsed.
+    #[must_use]
+    pub fn source_bytes(&self) -> Option<&[u8]> {
+        self.source_bytes.as_deref()
+    }
+
     /// Serializes the global configuration as a JSON object in TOML shape.
     ///
     /// The payload mirrors the operator-authored global catalog and profiles.
@@ -143,6 +149,20 @@ impl Config {
     /// interpolation, invalid TOML, or a failed semantic check.
     pub fn from_toml_str(raw: &str) -> Result<Config, crate::api_error::ConfigError> {
         Self::parse_toml(raw).map_err(crate::api_error::ConfigError::from)
+    }
+
+    /// Interpolates `${VAR}` through `lookup`, parses, and validates a TOML
+    /// configuration string without touching the filesystem.
+    ///
+    /// # Errors
+    /// Returns [`ConfigError`](crate::ConfigError) for a malformed or unresolved
+    /// interpolation, invalid TOML, or a failed semantic check.
+    pub fn from_toml_with_lookup(
+        raw: &str,
+        path: Option<&Path>,
+        lookup: VarLookupFn<'_>,
+    ) -> Result<Config, crate::api_error::ConfigError> {
+        Self::parse_toml_with_lookup(raw, path, lookup).map_err(crate::api_error::ConfigError::from)
     }
 
     /// Returns a clone with `name` selected from the already-loaded catalog,
@@ -191,7 +211,9 @@ impl Config {
             path: path.map(Path::to_path_buf),
             source: Box::new(source),
         })?;
-        Self::from_value(document, lookup)
+        let mut config = Self::from_value(document, lookup)?;
+        config.source_bytes = Some(std::sync::Arc::from(raw.as_bytes()));
+        Ok(config)
     }
 
     /// Interpolates string leaves, deserializes, and validates an already

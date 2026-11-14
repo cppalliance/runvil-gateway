@@ -221,6 +221,37 @@ pub(crate) fn remove_rollback_config(config_path: &Path) {
     }
 }
 
+/// Lowercase hex SHA-256 of `bytes`.
+pub(crate) fn bytes_revision(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    let digest = Sha256::digest(bytes);
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+/// Lowercase hex SHA-256 of the raw bytes at `path`.
+pub(crate) fn file_revision(path: &Path) -> Result<String, GatewayError> {
+    let bytes = std::fs::read(path).map_err(|source| {
+        GatewayError::PendingConfig(format!("read config {}: {source}", path.display()))
+    })?;
+    Ok(bytes_revision(&bytes))
+}
+
+/// Lowercase hex SHA-256 of the effective pending-or-real config file:
+/// `gateway.toml.next` when staged, otherwise `gateway.toml`.
+pub(crate) fn effective_config_revision(config_path: &Path) -> Result<String, GatewayError> {
+    let shadow = shadow_path(config_path);
+    if shadow.is_file() {
+        file_revision(&shadow)
+    } else {
+        file_revision(config_path)
+    }
+}
+
 #[cfg(test)]
 #[path = "config_shadow-tests.rs"]
 mod tests;

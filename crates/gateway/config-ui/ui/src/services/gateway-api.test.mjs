@@ -32,11 +32,26 @@ test("a putConfig refusal includes the envelope's error code", async () => {
     );
   const api = new app.GatewayApi({ fetchFn, storage: storageShim() });
 
-  await assert.rejects(api.putConfig({}), (error) => {
+  await assert.rejects(api.putConfig({}, "a".repeat(64)), (error) => {
     assert.ok(error instanceof app.GatewayHttpError, "the refusal throws GatewayHttpError");
     assert.equal(error.status, 422);
     assert.equal(error.message, "unknown field `typo`", "the envelope message is kept");
     assert.equal(error.code, "config_invalid", "the error includes the envelope code");
     return true;
   });
+});
+
+test("putConfig refuses a missing or empty revision before touching the transport", async () => {
+  const app = await loadApp();
+  let calls = 0;
+  const fetchFn = async () => {
+    calls += 1;
+    return jsonResponse({ shadow: "gateway.toml.next" }, 200);
+  };
+  const api = new app.GatewayApi({ fetchFn, storage: storageShim() });
+
+  for (const bad of ["", "   ", null, undefined]) {
+    await assert.rejects(api.putConfig({}, bad), /revision token/i);
+  }
+  assert.equal(calls, 0, "no unconditional PUT /admin/config may be sent");
 });

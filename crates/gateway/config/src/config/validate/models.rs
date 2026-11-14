@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use super::super::companion::validate_artifact_source;
-use super::super::{Config, DominionKind, SttModelConfig, ToolDialect};
+use super::super::{Config, DominionKind, ModelKind, Protocol, SttModelConfig, ToolDialect};
 use super::{validate_capabilities, validate_http_url, validate_kind_scope};
 use crate::error::ConfigError;
 
@@ -66,6 +66,23 @@ impl Config {
                         model.name
                     )));
                 }
+            }
+            let on_responses = model.endpoints.iter().any(|id| {
+                self.endpoints.iter().any(|endpoint| {
+                    endpoint.id == *id && endpoint.protocol == Protocol::OpenaiResponses
+                })
+            });
+            if on_responses && model.kind != ModelKind::Chat {
+                return Err(ConfigError::Validation(format!(
+                    "model {} is a {} model, but an openai-responses endpoint serves chat only",
+                    model.name, model.kind
+                )));
+            }
+            if on_responses && model.tool_dialect != ToolDialect::Openai {
+                return Err(ConfigError::Validation(format!(
+                    "model {} must use tool_dialect openai on an openai-responses endpoint",
+                    model.name
+                )));
             }
             validate_kind_scope(
                 "model",

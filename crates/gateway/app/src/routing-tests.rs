@@ -6,6 +6,7 @@ use gateway_config::{Capabilities, ConfigErrorKind, Secret, ThinkingMode};
 fn model_named(name: &str) -> Arc<Model> {
     let endpoint = Arc::new(Endpoint {
         id: "e".to_owned(),
+        source: crate::routing::CredentialSource::Configured,
         upstream: Arc::new(OpenAiUpstream::new(
             "http://127.0.0.1:9",
             Secret::new(String::new()),

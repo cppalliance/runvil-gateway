@@ -12,7 +12,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gateway_config::{Config, ProfileSelection, load_pending_config, shadow_path, write_atomic};
+use gateway_config::{
+    Config, ProfileSelection, load_pending_config, parse_pending_config_text, shadow_path,
+    write_atomic,
+};
 use gateway_progress::Activity;
 #[cfg(feature = "web-search")]
 use gateway_web_search::WebSearchState;
@@ -110,8 +113,25 @@ pub(crate) fn capture_apply(config_path: &Path) -> Result<ApplyPlan, GatewayErro
     }
 
     // Validates that every `${VAR}` the config references resolves successfully,
-    // otherwise the next boot will fail.
-    let pending = pending_config(config_path)?;
+    // otherwise the next boot will fail. When a config shadow was captured,
+    // parse that exact captured snapshot so live `source_bytes` matches what
+    // `promote_captures` writes.
+    let pending =
+        if let Some(capture) = files.iter().find(|file| file.real_path == config_canonical) {
+            let pending_env = PendingEnv::new(config_path)?;
+            let shadow = shadow_path(&capture.real_path);
+            parse_pending_config_text(
+                config_path,
+                &shadow,
+                &capture.contents,
+                &ProfileSelection::default(),
+                &|name: &str| pending_env.resolve_var(name),
+            )
+            .and_then(|config| config.select_profile(None))
+            .map_err(config_write_error)?
+        } else {
+            pending_config(config_path)?
+        };
 
     let restart_required = census.restart_required();
 

@@ -144,18 +144,21 @@ async fn wait_for_sheet(url: &str, http: &reqwest::Client) -> Value {
 /// `active_profile` the route reports: it is not a configuration key, and
 /// a save containing it is refused.
 async fn get_config(url: &str, http: &reqwest::Client) -> Value {
-    let mut document = json_within(
-        send_within(
-            http.get(format!("{url}/admin/config"))
-                .bearer_auth("test-token"),
-        )
-        .await,
+    let response = send_within(
+        http.get(format!("{url}/admin/config"))
+            .bearer_auth("test-token"),
     )
     .await;
-    document
+    let revision = response.headers()["x-config-revision"]
+        .to_str()
+        .expect("GET /admin/config exposes x-config-revision")
+        .to_owned();
+    let mut document = json_within(response).await;
+    let map = document
         .as_object_mut()
-        .expect("the config document is an object")
-        .remove("active_profile");
+        .expect("the config document is an object");
+    map.remove("active_profile");
+    map.insert("revision".to_owned(), Value::String(revision));
     document
 }
 

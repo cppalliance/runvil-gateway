@@ -110,6 +110,26 @@ fn gateway_error_classify_is_table_driven() {
 }
 
 #[test]
+fn config_save_errors_classify_as_precondition_and_conflict() {
+    assert_eq!(
+        GatewayError::ConfigRevisionRequired.classify(),
+        (
+            StatusCode::PRECONDITION_REQUIRED,
+            "invalid_request_error",
+            "config_revision_required",
+        ),
+    );
+    assert_eq!(
+        GatewayError::ConfigConflict.classify(),
+        (
+            StatusCode::CONFLICT,
+            "invalid_request_error",
+            "config_conflict",
+        ),
+    );
+}
+
+#[test]
 fn only_a_loading_model_sets_retry_after() {
     // A loading model is a 503 the client should wait out, so its
     // response names the wait; the other 503s (a full queue, a model
@@ -403,5 +423,56 @@ fn a_cause_the_outer_message_already_includes_renders_once() {
         error_chain(&OverSilent(Silent)),
         "config write rejected",
         "a cause that renders as nothing adds no trailing separator"
+    );
+}
+
+#[test]
+fn chatgpt_diagnostics_name_requirement_or_phase_without_leaking_sources() {
+    let owner = GatewayError::OwnerProofRequired;
+    let owner_msg = owner.to_string();
+    assert!(owner_msg.contains("X-Runvil-Owner-Proof"));
+    assert!(owner_msg.contains("current boot"));
+    assert!(owner_msg.contains("absent or invalid"));
+    assert_eq!(
+        owner.classify(),
+        (
+            StatusCode::FORBIDDEN,
+            "invalid_request_error",
+            "owner_proof_required"
+        )
+    );
+
+    let interrupted = GatewayError::ChatGpt(gateway_chatgpt_plan::plan::PlanError::Interrupted(
+        "token refresh task stopped",
+    ));
+    assert!(
+        interrupted
+            .to_string()
+            .contains("token refresh task stopped")
+    );
+    assert_eq!(
+        interrupted.classify(),
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            "chatgpt_sign_in_failed"
+        )
+    );
+
+    let io_err = GatewayError::ChatGpt(gateway_chatgpt_plan::plan::PlanError::Store(
+        gateway_chatgpt_plan::store::StoreError::Io {
+            operation: "read record file",
+            source: std::io::Error::other("internal-secret-marker"),
+        },
+    ));
+    let wire_message = io_err.envelope()["error"]["message"]
+        .as_str()
+        .expect("message")
+        .to_owned();
+    assert!(wire_message.contains("read record file"));
+    assert!(!wire_message.contains("internal-secret-marker"));
+    assert_eq!(
+        io_err.source().map(ToString::to_string).as_deref(),
+        Some("internal-secret-marker")
     );
 }

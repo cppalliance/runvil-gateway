@@ -43,6 +43,39 @@ pub fn streaming_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
+/// Builds a reqwest client with [`reqwest::redirect::Policy::none`] and explicit
+/// timeout bounds, retrying the identical configuration once.
+///
+/// Never falls back to `reqwest::Client::default()` (which follows redirects
+/// and clears timeouts) and never drops the requested timeouts on retry.
+#[must_use]
+pub fn hardened_client(
+    connect_timeout: Duration,
+    request_timeout: Option<Duration>,
+) -> Option<reqwest::Client> {
+    let build = || {
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(connect_timeout);
+        if let Some(timeout) = request_timeout {
+            builder = builder.timeout(timeout);
+        }
+        builder.build()
+    };
+    build().or_else(|_| build()).ok()
+}
+
+/// Builds the streaming client for a backend reached with a credential that
+/// must reach that backend only: like [`streaming_client`], but it never
+/// follows a redirect, so neither the bearer token nor the request body can
+/// be forwarded to another server. A redirect comes back to the caller as an
+/// ordinary non-success status, and construction failure returns `None` so
+/// callers fail closed instead of falling back to a default client.
+#[must_use]
+pub fn no_redirect_streaming_client() -> Option<reqwest::Client> {
+    hardened_client(CONNECT_TIMEOUT, None)
+}
+
 /// TCP keepalive interval for audio streams, so a silently dead peer or an
 /// idle middlebox drop surfaces instead of hanging the stream forever.
 const AUDIO_TCP_KEEPALIVE: Duration = Duration::from_secs(60);

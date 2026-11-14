@@ -107,9 +107,23 @@ async fn a_later_switch_persists_b_while_boot_speech_a_keeps_serving() {
     restarted.speech.shutdown();
 }
 
+async fn get_config_with_etag(addr: std::net::SocketAddr) -> (serde_json::Value, String) {
+    let resp = reqwest::Client::new()
+        .get(format!("http://{addr}/admin/config"))
+        .bearer_auth("test-token")
+        .send()
+        .await
+        .expect("get /admin/config sends");
+    let etag = resp.headers()[reqwest::header::ETAG]
+        .to_str()
+        .expect("ETag header")
+        .to_owned();
+    (resp.json().await.expect("config json"), etag)
+}
+
 /// The document `GET /admin/config` serves is accepted verbatim by
-/// `PUT /admin/config`: the running document has no
-/// `active_profile` key for the save route to refuse.
+/// `PUT /admin/config` when paired with its `ETag`: the running document
+/// has no `active_profile` key for the save route to refuse.
 #[tokio::test]
 async fn the_served_config_round_trips_through_the_save_route() {
     let backend = fake_chat_backend().await;
@@ -117,7 +131,7 @@ async fn the_served_config_round_trips_through_the_save_route() {
     let (config, paths) = persisted_catalog(&temp, backend, "alpha");
     let addr = serve_state(boot_state_with_paths(config, paths)).await;
 
-    let document = get_json(addr, "/admin/config").await;
+    let (document, etag) = get_config_with_etag(addr).await;
     assert!(
         document.get("active_profile").is_none(),
         "the running document omits the active_profile key: {document}"
@@ -125,6 +139,7 @@ async fn the_served_config_round_trips_through_the_save_route() {
     let save = reqwest::Client::new()
         .put(format!("http://{addr}/admin/config"))
         .bearer_auth("test-token")
+        .header(reqwest::header::IF_MATCH, etag)
         .json(&document)
         .send()
         .await
@@ -166,11 +181,12 @@ async fn an_apply_persisting_speech_changes_leaves_boot_speech_untouched() {
     assert!(outcome.is_ok(), "boot A loads: {outcome:?}");
 
     // Stage an STT vocabulary change through the real save route.
-    let mut document = get_json(addr, "/admin/config").await;
+    let (mut document, etag) = get_config_with_etag(addr).await;
     document["stt"]["vocabulary"] = serde_json::json!(["beta-words"]);
     let save = reqwest::Client::new()
         .put(format!("http://{addr}/admin/config"))
         .bearer_auth("test-token")
+        .header(reqwest::header::IF_MATCH, etag)
         .json(&document)
         .send()
         .await

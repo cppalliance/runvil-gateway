@@ -165,6 +165,8 @@ export class ConfigStore {
    * loaded: `undefined` until then, `null` for no profile.
    */
   private persistedProfile: string | null | undefined = undefined;
+  /** The SHA-256 revision of the on-disk config `this.pending` was built from. */
+  private revision: string | null = null;
   /** Names of models the running profile exposes (the status list). */
   private runningModels: string[] = [];
   /** Unsaved edits: entry key -> field key -> value. */
@@ -208,6 +210,7 @@ export class ConfigStore {
       this.running = running;
       this.pending = pending.config;
       this.persistedProfile = pending.activeProfile;
+      this.revision = pending.revision;
       this.dirty = dirty;
       this.orphans = visibleOrphans(orphans);
       this.cache = cache;
@@ -231,6 +234,7 @@ export class ConfigStore {
     ]);
     this.pending = pending.config;
     this.persistedProfile = pending.activeProfile;
+    this.revision = pending.revision;
     this.dirty = dirty;
     this.chatTemplates = chatTemplates;
   }
@@ -462,9 +466,43 @@ export class ConfigStore {
     return structuredClone(this.pending);
   }
 
+  /** Stages the global config shadow, guarding against stale whole-doc writes. */
+  private async putShadow(payload: EntryData): Promise<void> {
+    if (this.revision === null || this.revision.trim() === "") {
+      throw new Error(
+        "Configuration has no revision token. Reload the page before saving.",
+      );
+    }
+    try {
+      await this.api.putConfig(payload, this.revision);
+    } catch (error) {
+      if (
+        error instanceof GatewayHttpError &&
+        (error.code === "config_conflict" || error.status === 409)
+      ) {
+        throw new GatewayHttpError(
+          error.status,
+          "Configuration changed on disk since this page loaded. Reload the page to see the latest configuration before saving.",
+          error.code,
+        );
+      }
+      if (
+        error instanceof GatewayHttpError &&
+        (error.code === "config_revision_required" || error.status === 428)
+      ) {
+        throw new GatewayHttpError(
+          error.status,
+          "Configuration has no revision token. Reload the page before saving.",
+          error.code,
+        );
+      }
+      throw error;
+    }
+  }
+
   /** Stages the global config shadow. */
   async savePayload(payload: EntryData): Promise<void> {
-    await this.api.putConfig(payload);
+    await this.putShadow(payload);
     await this.refreshPending();
     this.notify();
   }
@@ -658,7 +696,7 @@ export class ConfigStore {
         profile["models"] = [...chosen, name];
         target = selected;
       }
-      await this.api.putConfig(payload);
+      await this.putShadow(payload);
       await this.refreshPending();
       this.notify();
       return { name, profile: target };
@@ -721,7 +759,7 @@ export class ConfigStore {
 
   /** Saves one entry's edits (or the draft itself) to the shadow. */
   async save(entry: ModelEntry): Promise<void> {
-    await this.api.putConfig(this.buildSavePayload(entry));
+    await this.putShadow(this.buildSavePayload(entry));
     if (entry.draft) {
       this.discardDraft(entry);
     } else {
@@ -737,7 +775,7 @@ export class ConfigStore {
       this.discardDraft(entry);
       return;
     }
-    await this.api.putConfig(this.buildSavePayload(entry, true));
+    await this.putShadow(this.buildSavePayload(entry, true));
     this.edits.delete(entryKey(entry));
     await this.refreshPending();
     this.notify();

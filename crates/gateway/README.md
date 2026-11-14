@@ -56,6 +56,42 @@ A client pointed at a server without the extension must still transcribe, with t
 
 A feature that only works against the gateway is a bug in the design. The test is whether the client still works when the extension is absent.
 
+## The ChatGPT plan
+
+The gateway can sign a person in to their ChatGPT account and serve the models their plan includes. It is an extension in the sense above, and nothing changes for a client that does not ask. An endpoint asks by setting `auth = "chatgpt-plan"`. That setting requires `protocol = "openai-responses"` and allows neither `base_url` nor `api_key`, because a plan is sent to OpenAI only and with the signed-in person's credentials. Every other endpoint keeps the default, `auth = "api-key"`.
+
+Two request headers carry the extension. Neither replaces the gateway's ordinary authentication, which a request passes first, and a header sent more than once counts as absent.
+
+- `X-Runvil-Owner-Proof` shows that the caller can read `gateway-private.json`, the private file the gateway writes for its current boot. It gates the `/admin/chatgpt` routes, which also require the caller's own address to be loopback.
+- `X-Runvil-Plan-Proof` shows that the caller is Runvil's own client. It gates the plan's models.
+
+The sign-in exists only on a gateway that listens on loopback, meaning any address in `127.0.0.0/8` or `::1`. On any other gateway there is no sign-in, and the status route says so. The same terms ask that requests come from the user's own runtime.
+
+The `/admin/chatgpt` routes are the gateway's own:
+
+- `POST /admin/chatgpt/sign-in` starts a sign-in and returns one field, `authorize_url`, for the caller to open in a browser. The gateway listens for the browser's callback on `127.0.0.1`. A second call replaces the first.
+- `GET /admin/chatgpt/status` reports where the sign-in stands, whether the plan grants use, and the plan's models. It never returns a token. A sign-in is reported as pending until its own work is finished, so a client that polls can stop at the first reply that is not pending. A warning that a token could not be revoked can still be set after a sign-out or a cancelled sign-in has returned, and a client sees it at its next read.
+- `POST /admin/chatgpt/sign-out` signs out here and then revokes at OpenAI.
+- `POST /admin/chatgpt/forget` signs out and drops the registration.
+- `POST /admin/chatgpt/reset` deletes the saved record, readable or not.
+- `POST /admin/chatgpt/models/enable` and `POST /admin/chatgpt/models/forget` add the plan's models to the configuration and remove them.
+
+The standard routes keep their shapes. `GET /v1/models` lists a plan model only to a caller that presents the plan proof, and only while a readable sign-in with plan permission is active. To every other caller the list omits those rows. `POST /v1/chat/completions` for a plan model keeps the standard request, stream, and error shapes. On a gateway that listens on loopback, a request that names a plan model without the proof is refused with `403` and the code `chatgpt_plan_runvil_only`. On any other gateway the refusal comes first and its code is `chatgpt_plan_loopback_only`. The gateway does not substitute another model.
+
+That refusal is the point of the plan proof. OpenAI's [Sign in with ChatGPT Terms](https://openai.com/policies/sign-in-with-chatgpt-terms/) restrict a plan to the application its user connected, in section 3.1: "Use the user's plan only for the application they connected. Do not provide general-purpose API access for other tools or unrelated requests." The plan proof is how this gateway keeps to that: it serves the plan to Runvil's own client and to nothing else.
+
+`RUNVIL_CHATGPT_AGENT_NAME` changes the name the consent screen shows and nothing else. It takes 1 to 64 characters after trimming: ASCII letters and digits, the space, and `-_.()`. Any other value is ignored, and the name is `Runvil`.
+
+## Saving the configuration
+
+A whole-document save names the revision it was read from, so a page left open cannot overwrite a newer file. `GET /admin/config` returns the revision in `ETag` and in `x-config-revision` whenever the configuration came from a file. `PUT /admin/config` takes it back as `revision` in the body, as `x-config-revision`, or as `If-Match`.
+
+- A save with no revision is refused with `428` and the code `config_revision_required`, and stages nothing.
+- A save whose revision does not match the bytes it would replace is refused with `409` and the code `config_conflict`.
+- A revision that is malformed, or two carriers that disagree, is refused with `422`.
+
+A save is compared with the staged draft when there is one, and with the file otherwise. So once a draft is staged, the revision from `GET /admin/config` may no longer match. `GET /admin/config-pending` returns the revision a save will be compared with, in its `revision` field and in both headers.
+
 ## What this rules out
 
 - A parallel dialect of our own where a standard shape would do.

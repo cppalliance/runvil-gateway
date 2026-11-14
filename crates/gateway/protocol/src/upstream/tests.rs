@@ -12,6 +12,7 @@ use super::*;
 mod chat;
 mod embedding;
 mod rerank;
+mod responses;
 mod speech;
 mod stream;
 
@@ -123,4 +124,49 @@ fn serve_stalled() -> (String, JoinHandle<()>) {
         let _ = stream.read(&mut buf);
     });
     (format!("http://{addr}"), handle)
+}
+
+#[tokio::test]
+async fn missing_no_redirect_streaming_client_fails_closed() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct CountingBearer {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::upstream::BearerSource for CountingBearer {
+        async fn bearer(&self) -> Result<gateway_config::Secret, crate::error::ProtocolError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(gateway_config::Secret::new("plan-secret".to_owned()))
+        }
+    }
+
+    let (base, handle) = serve_once("200 OK", "{}");
+    let bearer = std::sync::Arc::new(CountingBearer {
+        calls: AtomicUsize::new(0),
+    });
+    let upstream = crate::upstream::responses::ResponsesUpstream::without_http_client(
+        &base,
+        bearer.clone(),
+        crate::wire::RequestPolicy::Plan,
+    );
+    let outcome = upstream.stream(request("m"), "m").await;
+    assert!(
+        matches!(
+            outcome,
+            Err(crate::error::ProtocolError::UpstreamConnect(_))
+        ),
+        "expected fail-closed UpstreamConnect, got {outcome:?}"
+    );
+    assert_eq!(
+        bearer.calls.load(Ordering::SeqCst),
+        0,
+        "without the no-redirect client, no bearer is even requested"
+    );
+    // Unblock serve_once's accept without issuing any real upstream request.
+    let probe = base.trim_start_matches("http://");
+    drop(std::net::TcpStream::connect(probe));
+    assert_eq!(handle.join().expect("server"), "");
 }

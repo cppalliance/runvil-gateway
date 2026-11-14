@@ -107,4 +107,128 @@ test("the persisted selection never appears in a config PUT", async () => {
     puts.every((call) => !("active_profile" in JSON.parse(call.init.body))),
     "the envelope's active_profile is stripped before the payload is built",
   );
+  assert.ok(
+    puts.every((call) => {
+      const rev = JSON.parse(call.init.body).revision;
+      return typeof rev === "string" && rev.length === 64;
+    }),
+    "every config PUT carries the loaded 64-hex revision precondition",
+  );
+});
+
+test("a stale Settings save after out-of-band ChatGPT model enablement is refused with 409 and tells the user to reload", async () => {
+  const config = modelsFixture();
+  const stub = gatewayStub({
+    key: "k",
+    config,
+    pending: structuredClone(config),
+    models: ["qwen-common"],
+  });
+  const { dom, root } = await bootApp({ key: "k", stub });
+
+  navigate(dom, "#/settings/gateway");
+  await settle();
+
+  // Out-of-band update on disk (ChatGPT sign-in + Add models) while Settings is open.
+  stub.state.config.endpoint.push({
+    id: "chatgpt",
+    protocol: "openai-responses",
+    auth: "chatgpt-plan",
+  });
+  stub.state.config.model.push({
+    name: "gpt-5",
+    description: "GPT-5",
+    context: 400000,
+    upstream: "gpt-5",
+    endpoints: ["chatgpt"],
+  });
+  stub.state.pending = structuredClone(stub.state.config);
+
+  const bind = root.querySelector(".field-row[data-key='bind'] input");
+  bind.value = "127.0.0.1:9090";
+  bind.dispatchEvent(new dom.window.Event("change"));
+  await settle();
+  root.querySelector(".card-save").click();
+  await settle();
+
+  const errorToasts = [...root.querySelectorAll(".toast-error")].map((el) => el.textContent);
+  assert.ok(
+    errorToasts.some((text) => /reload/i.test(text)),
+    `409 refusal tells the user to reload, got: ${JSON.stringify(errorToasts)}`,
+  );
+  assert.ok(
+    stub.state.pending.model.some((model) => model.name === "gpt-5"),
+    "out-of-band ChatGPT plan model on disk was not overwritten",
+  );
+  assert.equal(
+    root.querySelector(".field-row[data-key='bind'] input").value,
+    "127.0.0.1:9090",
+    "unsaved form input stays intact after the refusal",
+  );
+});
+
+test("consecutive saves advance the tracked revision seamlessly", async () => {
+  const config = modelsFixture();
+  const stub = gatewayStub({
+    key: "k",
+    config,
+    pending: structuredClone(config),
+    models: ["qwen-common"],
+  });
+  const { dom, root } = await bootApp({ key: "k", stub });
+
+  navigate(dom, "#/settings/gateway");
+  await settle();
+
+  const bind = () => root.querySelector(".field-row[data-key='bind'] input");
+  bind().value = "127.0.0.1:9091";
+  bind().dispatchEvent(new dom.window.Event("change"));
+  await settle();
+  root.querySelector(".card-save").click();
+  await settle();
+
+  bind().value = "127.0.0.1:9092";
+  bind().dispatchEvent(new dom.window.Event("change"));
+  await settle();
+  root.querySelector(".card-save").click();
+  await settle();
+
+  const puts = stub.calls
+    .filter((call) => call.url.endsWith("/admin/config") && call.init.method === "PUT")
+    .map((call) => JSON.parse(call.init.body));
+  assert.equal(puts.length, 2, "both consecutive saves succeeded");
+  assert.notEqual(puts[0].revision, puts[1].revision, "second save used the updated shadow revision");
+  assert.equal(stub.state.pending.server.bind, "127.0.0.1:9092");
+});
+
+test("save refuses locally when the loaded snapshot lacks a revision token", async () => {
+  const config = modelsFixture();
+  const stub = gatewayStub({
+    key: "k",
+    config,
+    pending: structuredClone(config),
+    models: ["qwen-common"],
+  });
+  stub.state.omitPendingRevision = true;
+  const { dom, root } = await bootApp({ key: "k", stub });
+
+  navigate(dom, "#/settings/gateway");
+  await settle();
+
+  const bind = root.querySelector(".field-row[data-key='bind'] input");
+  bind.value = "127.0.0.1:9099";
+  bind.dispatchEvent(new dom.window.Event("change"));
+  await settle();
+  root.querySelector(".card-save").click();
+  await settle();
+
+  const puts = stub.calls.filter(
+    (call) => call.url.endsWith("/admin/config") && call.init.method === "PUT",
+  );
+  assert.equal(puts.length, 0, "no unconditional PUT /admin/config is sent when revision is missing");
+  const errorToasts = [...root.querySelectorAll(".toast-error")].map((el) => el.textContent);
+  assert.ok(
+    errorToasts.some((text) => /reload/i.test(text)),
+    `missing revision tells the user to reload, got: ${JSON.stringify(errorToasts)}`,
+  );
 });

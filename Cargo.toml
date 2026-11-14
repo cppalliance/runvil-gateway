@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/gateway/app", "crates/gateway/config", "crates/gateway/config-ui", "crates/gateway/local", "crates/gateway/logging", "crates/gateway/progress", "crates/gateway/protocol", "crates/gateway/routing", "crates/gateway/web-search", "crates/gateway/stt/api", "crates/gateway/stt/engine", "crates/gateway/stt/backend-whisper", "crates/gateway/stt/whisper-ffi"]
+members = ["crates/*", "crates/gateway/app", "crates/gateway/config", "crates/gateway/config-ui", "crates/gateway/local", "crates/gateway/logging", "crates/gateway/progress", "crates/gateway/protocol", "crates/gateway/routing", "crates/gateway/web-search", "crates/gateway/chatgpt-plan", "crates/gateway/stt/api", "crates/gateway/stt/engine", "crates/gateway/stt/backend-whisper", "crates/gateway/stt/whisper-ffi"]
 # crates/shared-ui is not a Rust crate: it is the TypeScript and CSS package
 # the config UI consumes, so the crates/* glob skips it.
 # crates/gateway and crates/gateway/stt are manifestless containers holding
@@ -23,6 +23,7 @@ repository = "https://github.com/cppalliance/runvil-gateway"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
+aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sys"] }
 axum = { version = "0.8", features = ["multipart", "ws"] }
 base64 = "0.22"
 block2 = "0.6"
@@ -36,6 +37,7 @@ embed-resource = "3"
 flate2 = "1"
 futures-util = "0.3"
 gateway-api-discovery = { path = "crates/gateway-api-discovery" }
+gateway-chatgpt-plan = { path = "crates/gateway/chatgpt-plan" }
 gateway-api-types = { path = "crates/gateway-api-types" }
 gateway-config = { path = "crates/gateway/config" }
 gateway-config-ui = { path = "crates/gateway/config-ui" }

@@ -39,17 +39,18 @@ mod shadow;
 pub use crate::api_error::{ConfigError, ConfigErrorKind};
 pub use crate::config::{
     Capabilities, Config, DominionConfig, DominionKind, DraftTokenMax, DraftTokenMaxError,
-    EndpointConfig, LlamaBackend, LocalConfig, LocalModelConfig, ModelConfig, ModelKind,
-    MultimodalProjectorConfig, ProfileConfig, Protocol, QueuePolicy, RECOMMENDED_STT_MODELS,
-    RecommendedSttModel, SILERO_VAD_MODEL, SearchProvider, Secret, ServerConfig, SpeculationType,
-    SpeculativeConfig, SpeechArtifactPin, SttModelConfig, SttPipelineConfig, SttRole, ThinkingMode,
-    ToolDialect, ToolsConfig, VarLookupFn, WebSearchConfig, WhisperBackend,
+    EndpointAuth, EndpointConfig, LlamaBackend, LocalConfig, LocalModelConfig, ModelConfig,
+    ModelKind, MultimodalProjectorConfig, ProfileConfig, Protocol, QueuePolicy,
+    RECOMMENDED_STT_MODELS, RecommendedSttModel, SILERO_VAD_MODEL, SearchProvider, Secret,
+    ServerConfig, SpeculationType, SpeculativeConfig, SpeechArtifactPin, SttModelConfig,
+    SttPipelineConfig, SttRole, ThinkingMode, ToolDialect, ToolsConfig, VarLookupFn,
+    WebSearchConfig, WhisperBackend,
 };
 pub use crate::profile::{
     ProfileName, ProfileNameError, ProfileSelection, ProfileState, profile_state_path,
 };
 pub use crate::shadow::{
-    PendingReport, PendingShadows, clear_profile_state, load_pending_config, pending_report,
-    pending_var_references, persist_profile_state, save_config_shadow, shadow_path, write_atomic,
-    write_shadow,
+    PendingReport, PendingShadows, clear_profile_state, load_pending_config,
+    parse_pending_config_text, pending_report, pending_var_references, persist_profile_state,
+    read_pending_or_real_text, save_config_shadow, shadow_path, write_atomic, write_shadow,
 };

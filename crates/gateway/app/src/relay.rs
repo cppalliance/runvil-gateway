@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderMap, HeaderValue, Method};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -17,6 +17,7 @@ use crate::AppState;
 use crate::auth::AuthedCaller;
 use crate::error::{GatewayError, WireJson};
 use crate::registry::RouteInfo;
+use crate::routing::CredentialSource;
 use crate::wire::{
     ChatRequest, EmbeddingRequest, EmbeddingResponse, RerankRequest, RerankResponse,
 };
@@ -48,12 +49,24 @@ pub(crate) fn routes() -> Router<AppState> {
 /// naming the active queue command rather than a bare 404, so the caller
 /// knows to retry once the command completes. With no command active the
 /// miss is [`GatewayError::UnknownModel`].
+///
+/// This is also the gate on a model served on a user's ChatGPT plan. Such a
+/// model's catalog entry holds no usable upstream. A caller that presents
+/// this boot's plan proof, to a gateway listening on loopback only, gets the
+/// model back with the upstream that spends the plan; any other caller is
+/// refused here, before a kind check, a queue slot or a call to the broker.
+/// The check reads where the endpoint's credential comes from, never a name.
 pub(crate) async fn resolve_routed_model(
     state: &AppState,
+    caller: &HeaderMap,
     name: &str,
 ) -> Result<Arc<crate::routing::Model>, GatewayError> {
     let live = state.live.read().await;
     match live.routing.model(name) {
+        Ok(model) if model.endpoint.source == CredentialSource::ChatgptPlan => {
+            let upstream = state.chatgpt.authorize_plan(caller)?;
+            Ok(Arc::new(model.with_upstream(upstream)))
+        }
         Ok(model) => Ok(model),
         Err(unknown) => {
             if live.loading.contains(name) {
@@ -86,7 +99,7 @@ async fn chat_completions(
     request
         .validate()
         .map_err(|reason| GatewayError::MalformedRequest(reason.to_owned()))?;
-    let model = resolve_routed_model(&state, &request.model).await?;
+    let model = resolve_routed_model(&state, &caller, &request.model).await?;
     crate::routing::require_kind(&model, ModelKind::Chat)?;
     let client_id = crate::queue::ClientId::from_header(
         caller
@@ -221,7 +234,7 @@ async fn embeddings(
     request
         .validate()
         .map_err(|reason| GatewayError::MalformedRequest(reason.to_owned()))?;
-    let model = resolve_routed_model(&state, &request.model).await?;
+    let model = resolve_routed_model(&state, &caller, &request.model).await?;
     crate::routing::require_kind(&model, ModelKind::Embedding)?;
     let client_id = crate::queue::ClientId::from_header(
         caller
@@ -250,7 +263,7 @@ async fn rerank(
     request
         .validate()
         .map_err(|reason| GatewayError::MalformedRequest(reason.to_owned()))?;
-    let model = resolve_routed_model(&state, &request.model).await?;
+    let model = resolve_routed_model(&state, &caller, &request.model).await?;
     crate::routing::require_kind(&model, ModelKind::Classifier)?;
     let client_id = crate::queue::ClientId::from_header(
         caller
