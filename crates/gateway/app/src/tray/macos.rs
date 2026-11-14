@@ -90,7 +90,7 @@ enum TraySlot {
     /// armed state dwarfs the headless handle.
     Armed(Box<Tray>),
     /// Tray construction failed; the handle returns to the headless loop.
-    Headless(GatewayHandle),
+    Headless(Box<GatewayHandle>),
 }
 
 /// Sets the accessory activation policy and runs the tray on the main
@@ -127,7 +127,7 @@ pub(super) fn run(options: &ServeOptions) -> Result<ShutdownReason, StartupError
             Ok(tray) => TraySlot::Armed(Box::new(tray.arm(handle))),
             Err(error) => {
                 tracing::error!("the system tray is unavailable: {error}; running headless");
-                TraySlot::Headless(handle)
+                TraySlot::Headless(Box::new(handle))
             }
         };
         let headless = matches!(slot, TraySlot::Headless(_));
@@ -149,7 +149,7 @@ pub(super) fn run(options: &ServeOptions) -> Result<ShutdownReason, StartupError
     let slot = TRAY.with(|cell| cell.borrow_mut().take());
     match slot {
         Some(TraySlot::Armed(tray)) => tray.teardown(),
-        Some(TraySlot::Headless(handle)) => run_headless(handle),
+        Some(TraySlot::Headless(handle)) => run_headless(*handle),
         None => {
             // Unreachable in practice: the build timer fires on the first
             // loop pass, before any event that could stop the loop. The
