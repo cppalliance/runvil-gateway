@@ -110,6 +110,26 @@ fn gateway_error_classify_is_table_driven() {
 }
 
 #[test]
+fn config_save_errors_classify_as_precondition_and_conflict() {
+    assert_eq!(
+        GatewayError::ConfigRevisionRequired.classify(),
+        (
+            StatusCode::PRECONDITION_REQUIRED,
+            "invalid_request_error",
+            "config_revision_required",
+        ),
+    );
+    assert_eq!(
+        GatewayError::ConfigConflict.classify(),
+        (
+            StatusCode::CONFLICT,
+            "invalid_request_error",
+            "config_conflict",
+        ),
+    );
+}
+
+#[test]
 fn only_a_loading_model_sets_retry_after() {
     // A loading model is a 503 the client should wait out, so its
     // response names the wait; the other 503s (a full queue, a model

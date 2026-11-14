@@ -29,7 +29,7 @@ Runvil Gateway is one process that serves an OpenAI-shaped API for chat, embeddi
 | `POST /v1/tools/web_search` | A Gateway extension, backed by Brave Search |
 | `GET /v1/audio/voices` | A Gateway extension, the voice catalog |
 | `/v1/cache` | A Gateway extension, a local blob cache that downloads and keeps files by sha256 |
-| `/config/`, `/admin/*`, `/health` | The Gateway's own settings page, admin surface, and liveness probe |
+| `/config/`, `/admin/*`, `/health` | The Gateway's own settings page, admin surface, and liveness probe ([a config save names a revision](crates/gateway/README.md#saving-the-configuration)) |
 
 Requests are answered by a local model through a managed `llama-server` child, or forwarded to a cloud provider you configured. Chat, embeddings, and reranking work either way. Transcription runs on the Gateway's own speech pipeline, which decodes with whisper.cpp, and speech synthesis forwards to a speech endpoint you configure.
 

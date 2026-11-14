@@ -117,6 +117,12 @@ impl Config {
         }
     }
 
+    /// Exact raw UTF-8 TOML bytes from which this configuration was parsed.
+    #[must_use]
+    pub fn source_bytes(&self) -> Option<&[u8]> {
+        self.source_bytes.as_deref()
+    }
+
     /// Serializes the global configuration as a JSON object in TOML shape.
     ///
     /// The payload mirrors the operator-authored global catalog and profiles.
@@ -191,7 +197,9 @@ impl Config {
             path: path.map(Path::to_path_buf),
             source: Box::new(source),
         })?;
-        Self::from_value(document, lookup)
+        let mut config = Self::from_value(document, lookup)?;
+        config.source_bytes = Some(std::sync::Arc::from(raw.as_bytes()));
+        Ok(config)
     }
 
     /// Interpolates string leaves, deserializes, and validates an already

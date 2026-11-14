@@ -14,7 +14,8 @@
 use std::path::Path;
 
 use axum::extract::State;
-use axum::http::Method;
+use axum::http::{HeaderMap, HeaderValue, Method, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use gateway_config::save_config_shadow;
@@ -22,9 +23,11 @@ use serde::Serialize;
 
 use crate::AppState;
 use crate::auth::LoopbackCaller;
-use crate::config_shadow::PendingEnv;
+use crate::config_shadow::{PendingEnv, bytes_revision, effective_config_revision};
 use crate::error::{GatewayError, WireJson, blocking, config_write_error};
 use crate::registry::RouteInfo;
+
+pub(super) const REVISION_HEADER: &str = "x-config-revision";
 
 /// The reply of every shadow-write route: the shadow file the save
 /// staged, as a display path.
@@ -59,9 +62,26 @@ pub(super) fn routes() -> Router<AppState> {
 async fn admin_config(
     State(state): State<AppState>,
     _caller: LoopbackCaller,
-) -> Result<Json<serde_json::Value>, GatewayError> {
-    let config = state.config().await;
-    Ok(Json(config.to_json()))
+) -> Result<Response, GatewayError> {
+    let _publication = state.apply.lock().await;
+    let has_path = crate::admin::config_path(&state).is_ok();
+    let (body, revision) = {
+        let live = state.live.read().await;
+        let rev = has_path
+            .then(|| live.config.source_bytes().map(bytes_revision))
+            .flatten();
+        (live.config.to_json(), rev)
+    };
+    let mut response = Json(body).into_response();
+    if let Some(rev) = revision {
+        if let Ok(etag) = HeaderValue::from_str(&format!("\"{rev}\"")) {
+            response.headers_mut().insert(header::ETAG, etag);
+        }
+        if let Ok(value) = HeaderValue::from_str(&rev) {
+            response.headers_mut().insert(REVISION_HEADER, value);
+        }
+    }
+    Ok(response)
 }
 
 /// The `PUT /admin/config` route: bearer-authed, stages the global config.
@@ -72,11 +92,16 @@ async fn admin_config(
 /// atomically. The real file stays untouched and nothing reloads. The reply
 /// is `{"shadow": path}`. A body containing `active_profile` is rejected
 /// as a config-write error: selection belongs to
-/// `POST /admin/switch-profile`.
+/// `POST /admin/switch-profile`. Every save requires a non-empty `revision`
+/// precondition (in the JSON body or via `If-Match` / `x-config-revision`);
+/// omitting it replies `428 Precondition Required` (`config_revision_required`),
+/// and a mismatch against the effective on-disk config replies `409 Conflict`
+/// (`config_conflict`) without staging anything.
 async fn admin_put_config(
     State(state): State<AppState>,
     _caller: LoopbackCaller,
-    WireJson(body): WireJson<serde_json::Value>,
+    headers: HeaderMap,
+    WireJson(mut body): WireJson<serde_json::Value>,
 ) -> Result<Json<ShadowReply>, GatewayError> {
     // Saves take the apply lock: apply promotes shadows without
     // re-validating, so the combination it promotes must be one the latest
@@ -84,8 +109,13 @@ async fn admin_put_config(
     // other.
     let _guard = state.apply.lock().await;
     let config_path = crate::admin::config_path(&state)?.to_path_buf();
+    let expected_revision = extract_expected_revision(&headers, &mut body)?;
     let document = toml_document(body)?;
     let shadows = blocking(move || {
+        let current = effective_config_revision(&config_path)?;
+        if expected_revision != current {
+            return Err(GatewayError::ConfigConflict);
+        }
         let pending_env = PendingEnv::new(&config_path)?;
         save_config_shadow(&config_path, document, &|name: &str| {
             pending_env.resolve_var(name)
@@ -94,6 +124,71 @@ async fn admin_put_config(
     })
     .await??;
     Ok(Json(ShadowReply::staged(&shadows.config)))
+}
+
+fn extract_expected_revision(
+    headers: &HeaderMap,
+    body: &mut serde_json::Value,
+) -> Result<String, GatewayError> {
+    let body_rev = match body.as_object_mut().and_then(|map| map.remove("revision")) {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(text)) if !text.trim().is_empty() => Some(text),
+        Some(_) => {
+            return Err(GatewayError::ConfigWriteRejected(
+                "revision must be a non-empty string".to_owned(),
+            ));
+        }
+    };
+    let header_rev = extract_header_revision(headers)?;
+    if let (Some(from_body), Some(from_header)) = (&body_rev, &header_rev)
+        && from_body != from_header
+    {
+        return Err(GatewayError::ConfigWriteRejected(
+            "conflicting revision values in header and body".to_owned(),
+        ));
+    }
+    body_rev
+        .or(header_rev)
+        .ok_or(GatewayError::ConfigRevisionRequired)
+}
+
+fn extract_header_revision(headers: &HeaderMap) -> Result<Option<String>, GatewayError> {
+    let custom = parse_revision_header(headers.get(REVISION_HEADER), false)?;
+    let if_match = parse_revision_header(headers.get(header::IF_MATCH), true)?;
+    if let (Some(a), Some(b)) = (&custom, &if_match)
+        && a != b
+    {
+        return Err(GatewayError::ConfigWriteRejected(
+            "conflicting revision headers".to_owned(),
+        ));
+    }
+    Ok(custom.or(if_match))
+}
+
+fn parse_revision_header(
+    raw: Option<&HeaderValue>,
+    strip_quotes: bool,
+) -> Result<Option<String>, GatewayError> {
+    let Some(value) = raw else {
+        return Ok(None);
+    };
+    let text = value
+        .to_str()
+        .map_err(|_| GatewayError::ConfigWriteRejected("invalid revision header".to_owned()))?
+        .trim();
+    let cleaned = if strip_quotes {
+        text.strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+            .unwrap_or(text)
+    } else {
+        text
+    };
+    if cleaned.is_empty() {
+        return Err(GatewayError::ConfigWriteRejected(
+            "revision header must not be empty".to_owned(),
+        ));
+    }
+    Ok(Some(cleaned.to_owned()))
 }
 
 /// Converts the request body into the TOML document a shadow save takes.

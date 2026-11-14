@@ -2,6 +2,7 @@
 //! semantic validation.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +109,9 @@ pub struct Config {
     tools: Option<ToolsConfig>,
     /// Optional canonical speech pipeline tuning.
     stt: Option<SttPipelineConfig>,
+    /// Exact raw UTF-8 bytes from which this configuration was parsed, so
+    /// revision headers/tokens always identify the same snapshot as `to_json`.
+    source_bytes: Option<Arc<[u8]>>,
 }
 
 /// Private DTO for [`Config`]. Holds the raw TOML shape before validation and
@@ -167,6 +171,7 @@ impl TryFrom<RawConfig> for Config {
             stale_state_selection: None,
             tools: raw.tools,
             stt,
+            source_bytes: None,
         })
     }
 }

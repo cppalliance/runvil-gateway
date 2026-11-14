@@ -224,6 +224,16 @@ impl GatewayError {
                 "server_error",
                 "cloud_models_unavailable",
             ),
+            Self::ConfigRevisionRequired => (
+                StatusCode::PRECONDITION_REQUIRED,
+                "invalid_request_error",
+                "config_revision_required",
+            ),
+            Self::ConfigConflict => (
+                StatusCode::CONFLICT,
+                "invalid_request_error",
+                "config_conflict",
+            ),
         }
     }
 }

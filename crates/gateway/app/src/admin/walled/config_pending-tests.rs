@@ -1,7 +1,10 @@
-﻿use gateway_config::{Config, ProfileSelection, profile_state_path, shadow_path, write_shadow};
+use std::sync::Arc;
+
+use gateway_config::{Config, ProfileSelection, profile_state_path, shadow_path, write_shadow};
 
 use super::*;
-use crate::test_support::{AdminPaths, serve_with_paths};
+use crate::park::{Phase, PhasePark};
+use crate::test_support::{AdminPaths, app_state, serve_state, serve_with_paths};
 
 const PROFILE_CONFIG: &str = r#"
 config-version = 0
@@ -163,4 +166,66 @@ fn a_live_reloadable_change_needs_no_restart() {
 
     assert!(reply.dirty);
     assert!(!reply.restart_required);
+}
+
+#[tokio::test]
+async fn pending_read_parses_and_hashes_one_captured_byte_snapshot() {
+    let temp = tempfile::TempDir::new().expect("temp dir");
+    let config_path = temp.path().join("gateway.toml");
+    std::fs::write(&config_path, PROFILE_CONFIG).expect("write initial config");
+    let config = Config::load(&config_path, &ProfileSelection::default()).expect("load config");
+    let mut state = app_state(
+        config,
+        Some(AdminPaths {
+            fixture_dir: temp.path().to_path_buf(),
+            active: "alpha".to_owned(),
+            config_path: config_path.clone(),
+        }),
+    );
+    let park = Arc::new(PhasePark::at(Phase::PendingConfigAfterRead));
+    state.park = Some(Arc::clone(&park));
+    let addr = serve_state(state).await;
+
+    let client = reqwest::Client::new();
+    let get_task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .get(format!("http://{addr}/admin/config-pending"))
+                .bearer_auth("test-token")
+                .send()
+                .await
+                .expect("pending request sends")
+        }
+    });
+    park.entered().await;
+
+    let disk_b = format!("{PROFILE_CONFIG}\n[[profile]]\nname = \"gamma\"\nmodels = []\n");
+    std::fs::write(&config_path, &disk_b).expect("overwrite disk mid-read");
+    park.release();
+
+    let resp = get_task.await.expect("pending task joins");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let rev_a = bytes_revision(PROFILE_CONFIG.as_bytes());
+    assert_eq!(
+        resp.headers()[reqwest::header::ETAG].to_str().unwrap(),
+        format!("\"{rev_a}\"")
+    );
+    assert_eq!(resp.headers()[REVISION_HEADER].to_str().unwrap(), rev_a);
+    let mut body: serde_json::Value = resp.json().await.expect("pending json");
+    assert_eq!(body["revision"], rev_a);
+    assert_eq!(body["profile"]["profile"].as_array().unwrap().len(), 2);
+
+    let mut save = body["profile"].take();
+    save.as_object_mut().unwrap().remove("active_profile");
+    save["revision"] = serde_json::Value::String(rev_a);
+    let put_resp = client
+        .put(format!("http://{addr}/admin/config"))
+        .bearer_auth("test-token")
+        .json(&save)
+        .send()
+        .await
+        .expect("put sends");
+    assert_eq!(put_resp.status(), reqwest::StatusCode::CONFLICT);
+    assert!(!shadow_path(&config_path).exists());
 }

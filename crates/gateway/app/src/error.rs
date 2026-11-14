@@ -279,6 +279,15 @@ pub(crate) enum GatewayError {
     #[non_exhaustive]
     #[error("cloud provider model sheet unavailable: {0}")]
     CloudModelsUnavailable(String),
+    /// `PUT /admin/config` arrived without a `revision` precondition (neither
+    /// body `revision` nor `If-Match` / `x-config-revision`).
+    #[error("config save requires a revision precondition; reload the page before saving")]
+    ConfigRevisionRequired,
+
+    /// `PUT /admin/config` presented a `revision` precondition that no longer
+    /// matches the configuration on disk.
+    #[error("configuration changed on disk since this page loaded; reload the page before saving")]
+    ConfigConflict,
 }
 
 impl From<crate::queue::AdmitError> for GatewayError {

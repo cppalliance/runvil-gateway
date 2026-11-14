@@ -56,6 +56,16 @@ A client pointed at a server without the extension must still transcribe, with t
 
 A feature that only works against the gateway is a bug in the design. The test is whether the client still works when the extension is absent.
 
+## Saving the configuration
+
+A whole-document save names the revision it was read from, so a page left open cannot overwrite a newer file. `GET /admin/config` returns the revision in `ETag` and in `x-config-revision` whenever the configuration came from a file. `PUT /admin/config` takes it back as `revision` in the body, as `x-config-revision`, or as `If-Match`.
+
+- A save with no revision is refused with `428` and the code `config_revision_required`, and stages nothing.
+- A save whose revision does not match the bytes it would replace is refused with `409` and the code `config_conflict`.
+- A revision that is malformed, or two carriers that disagree, is refused with `422`.
+
+A save is compared with the staged draft when there is one, and with the file otherwise. So once a draft is staged, the revision from `GET /admin/config` may no longer match. `GET /admin/config-pending` returns the revision a save will be compared with, in its `revision` field and in both headers.
+
 ## What this rules out
 
 - A parallel dialect of our own where a standard shape would do.

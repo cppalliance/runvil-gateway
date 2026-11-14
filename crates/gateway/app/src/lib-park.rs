@@ -14,6 +14,9 @@ pub(crate) enum Phase {
     /// A config apply's commit, before it takes the apply lock: the
     /// captured shadows are not yet promoted and nothing is live.
     ApplyCommit,
+    /// `GET /admin/config-pending` immediately after its single read of the
+    /// effective config file, before parsing and hashing that snapshot.
+    PendingConfigAfterRead,
 }
 
 /// Parks the command at `phase` until the test releases it. Single use:

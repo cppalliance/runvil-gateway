@@ -49,7 +49,7 @@ pub use crate::profile::{
     ProfileName, ProfileNameError, ProfileSelection, ProfileState, profile_state_path,
 };
 pub use crate::shadow::{
-    PendingReport, PendingShadows, clear_profile_state, load_pending_config, pending_report,
-    pending_var_references, persist_profile_state, save_config_shadow, shadow_path, write_atomic,
-    write_shadow,
+    PendingReport, PendingShadows, clear_profile_state, load_pending_config,
+    parse_pending_config_text, pending_report, pending_var_references, persist_profile_state,
+    read_pending_or_real_text, save_config_shadow, shadow_path, write_atomic, write_shadow,
 };
