@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 /// The gateway discovery file's name inside the run directory.
 pub const GATEWAY_DISCOVERY_FILE_NAME: &str = "gateway.json";
 
+/// The private proofs file's name inside the run directory. It is not part
+/// of the discovery contract.
+pub const GATEWAY_PRIVATE_FILE_NAME: &str = "gateway-private.json";
+
 /// The gateway log's name inside the state directory's `logs` directory.
 pub const GATEWAY_LOG_FILE_NAME: &str = "gateway.log";
 
@@ -35,6 +39,12 @@ pub fn default_run_dir() -> Option<PathBuf> {
 #[must_use]
 pub fn gateway_discovery_file_path(run_dir: &Path) -> PathBuf {
     run_dir.join(GATEWAY_DISCOVERY_FILE_NAME)
+}
+
+/// The private proofs file inside `run_dir`.
+#[must_use]
+pub fn gateway_private_file_path(run_dir: &Path) -> PathBuf {
+    run_dir.join(GATEWAY_PRIVATE_FILE_NAME)
 }
 
 /// The launch lock inside `run_dir`.
