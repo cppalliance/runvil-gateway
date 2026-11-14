@@ -1,0 +1,41 @@
+[package]
+name = "gateway-chatgpt-plan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+aws-lc-rs.workspace = true
+axum = { workspace = true, optional = true }
+base64.workspace = true
+gateway-config.workspace = true
+gateway-protocol.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[features]
+# The strict fake issuer, for other crates' tests. `ring-io` exposes an RSA
+# public key's components, for the fake's JWKS.
+test-fixtures = ["dep:axum", "aws-lc-rs/ring-io"]
+
+[dev-dependencies]
+axum.workspace = true
+# `ring-io` exposes an RSA public key's components, for the test JWKS.
+aws-lc-rs = { workspace = true, features = ["ring-io"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+build-ceiling.workspace = true
+
+[lints]
+workspace = true
