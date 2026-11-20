@@ -7,13 +7,13 @@ todos:
     status: completed
   - id: test
     content: "Add the test to crates/gateway/app/tests/it/chat.rs"
-    status: pending
+    status: completed
   - id: breaks
     content: "Apply each of the two breaks, confirm the test now fails, and revert it"
-    status: pending
+    status: completed
   - id: verify
     content: "Run the verification commands"
-    status: pending
+    status: completed
   - id: pr
     content: "Push the branch and open one PR against cppalliance/runvil-gateway when the user asks"
     status: pending
@@ -112,6 +112,9 @@ The change is itself a test, so its own check is that each break fails it.
 - Assumptions, risks, and notes:
   - `stream_true_relays_typed_chunks_and_done` already reads a streamed reply's text, and the tests of the emulated dialect read its rewritten reply.
   - This serves the test "Point an OpenAI client at the Gateway and send one chat request. A reply comes back." of the QA plan of attack.
+  - Result of the breaks: on a default build the workspace runs 1,963 tests. Under each break the new test fails and the other 1,962 pass.
+  - Result of the exit criteria: every command passed. With all features the workspace runs 1,964 tests.
+  - `vibelight` was run on `chat.rs` alone, before and after. It reports one more lead after: the new test repeats the request the file's other tests build, with the same key and URL. Sharing that code would mean rewriting the existing tests, which this plan does not do.
 
 ### Deferred and Out of Scope
 
