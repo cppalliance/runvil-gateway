@@ -3,16 +3,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use gateway_config::{Config, ConfigError, ModelKind, Protocol};
+use gateway_config::{Config, ConfigError, EndpointAuth, ModelKind, Protocol};
 
 use crate::error::GatewayError;
 use crate::queue::DominionQueue;
-use crate::upstream::{OpenAiUpstream, Upstream};
+use crate::upstream::{OpenAiUpstream, ResponsesUpstream, StaticBearer, Upstream};
+use crate::wire::RequestPolicy;
 
 // The table-entry vocabulary (`Model`, `Endpoint`) and the dominion-queue
 // builder live in the routing crate, shared with the local inference crate;
 // these re-exports make them reachable as `crate::routing::*`.
-pub(crate) use gateway_routing::{Endpoint, Model, dominion_queues};
+pub(crate) use gateway_routing::{CredentialSource, Endpoint, Model, dominion_queues};
 
 /// A resolved routing table. Cloning copies the two indexes of `Arc`
 /// entries, never the endpoints behind them, so a switch can publish the
@@ -95,12 +96,32 @@ impl Routing {
 
         let mut endpoints: HashMap<&str, Arc<Endpoint>> = HashMap::new();
         for endpoint in config.endpoints() {
-            let upstream: Arc<dyn Upstream> = match endpoint.protocol() {
-                Protocol::Openai => Arc::new(OpenAiUpstream::new(
-                    endpoint.base_url(),
-                    endpoint.api_key().clone(),
-                )),
-                _ => unreachable!("Protocol is non_exhaustive; wire up new protocols here"),
+            let source = match endpoint.auth() {
+                EndpointAuth::ChatgptPlan => CredentialSource::ChatgptPlan,
+                _ => CredentialSource::Configured,
+            };
+            let upstream: Arc<dyn Upstream> = match (source, endpoint.api_key()) {
+                // The catalog never holds the upstream that spends a plan:
+                // `ChatGpt::authorize_plan` hands that to an authorized
+                // request. Nothing here reads a configured URL or key.
+                (CredentialSource::ChatgptPlan, _) => Arc::new(crate::chatgpt::Unresolved),
+                (CredentialSource::Configured, Some(api_key)) => match endpoint.protocol() {
+                    Protocol::Openai => {
+                        Arc::new(OpenAiUpstream::new(endpoint.base_url(), api_key.clone()))
+                    }
+                    Protocol::OpenaiResponses => Arc::new(ResponsesUpstream::new(
+                        endpoint.base_url(),
+                        Arc::new(StaticBearer::new(api_key.clone())),
+                        RequestPolicy::Standard,
+                    )),
+                    _ => unreachable!("Protocol is non_exhaustive; wire up new protocols here"),
+                },
+                (CredentialSource::Configured, None) => {
+                    return Err(ConfigError::validation(format!(
+                        "endpoint {} needs api_key",
+                        endpoint.id()
+                    )));
+                }
             };
             let queue = match endpoint.dominion() {
                 Some(dominion_id) => dominion_queues
@@ -118,6 +139,7 @@ impl Routing {
                 endpoint.id(),
                 Arc::new(Endpoint {
                     id: endpoint.id().to_owned(),
+                    source,
                     upstream,
                     queue,
                 }),

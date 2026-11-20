@@ -155,6 +155,9 @@ impl FromRequestParts<AppState> for LoopbackCaller {
     }
 }
 
+mod owner;
+pub(crate) use owner::OwnerCaller;
+
 #[cfg(test)]
 mod secret_tests;
 

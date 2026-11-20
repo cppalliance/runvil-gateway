@@ -41,6 +41,7 @@ mod file;
 mod health;
 mod lock;
 mod paths;
+mod private;
 mod shutdown;
 mod stale;
 mod sys;
@@ -52,10 +53,11 @@ pub use crate::file::{GatewayDiscoveryFile, remove_if_mine};
 pub use crate::health::{HealthError, ProbeError, wait_for_health, wait_for_health_cancellable};
 pub use crate::lock::{GatewayInstanceLease, LaunchDecision, LaunchLock};
 pub use crate::paths::{
-    GATEWAY_DISCOVERY_FILE_NAME, GATEWAY_LOG_FILE_NAME, INSTANCE_LOCK_FILE_NAME, LOCK_FILE_NAME,
-    default_run_dir, gateway_discovery_file_path, gateway_log_path, instance_lock_file_path,
-    lock_file_path, run_dir,
+    GATEWAY_DISCOVERY_FILE_NAME, GATEWAY_LOG_FILE_NAME, GATEWAY_PRIVATE_FILE_NAME,
+    INSTANCE_LOCK_FILE_NAME, LOCK_FILE_NAME, default_run_dir, gateway_discovery_file_path,
+    gateway_log_path, gateway_private_file_path, instance_lock_file_path, lock_file_path, run_dir,
 };
+pub use crate::private::{GatewayPrivateFile, remove_private_if_mine};
 pub use crate::shutdown::{ShutdownError, request_shutdown, request_shutdown_before};
 pub use crate::stale::resolve_cancellable;
 #[cfg(feature = "test-fixtures")]

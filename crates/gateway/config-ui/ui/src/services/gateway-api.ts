@@ -205,6 +205,11 @@ export interface PendingPage {
    * defines it.
    */
   activeProfile: string | null;
+  /**
+   * The on-disk SHA-256 revision the pending view was built from, sent back on
+   * `PUT /admin/config` so stale whole-document writes fail closed with 409.
+   */
+  revision: string | null;
 }
 
 /** One environment variable a cloud provider reads, from the sheet. */
@@ -530,8 +535,10 @@ export class GatewayApi {
    */
   async getConfigPending(): Promise<PendingPage> {
     const data = requireRecord(await this.getJson("/admin/config-pending"), "pending config");
+    const revision =
+      typeof data["revision"] === "string" && data["revision"] !== "" ? data["revision"] : null;
     if (data["profile"] === undefined) {
-      return { config: {}, activeProfile: null };
+      return { config: {}, activeProfile: null, revision };
     }
     const { active_profile: selection, ...config } = requireRecord(
       data["profile"],
@@ -540,6 +547,7 @@ export class GatewayApi {
     return {
       config,
       activeProfile: typeof selection === "string" ? selection : null,
+      revision,
     };
   }
 
@@ -557,13 +565,22 @@ export class GatewayApi {
    * Stages `body` (the `GET /admin/config` JSON shape) as the config
    * shadow via `PUT /admin/config`. Untouched secrets stay `"***"`; the
    * gateway restores their real values. A body with `active_profile`
-   * is refused: selection belongs to {@link switchProfile}.
+   * is refused: selection belongs to {@link switchProfile}. Every save
+   * requires a non-empty `revision` precondition so stale writes fail
+   * closed with `409 config_conflict` instead of staging unconditionally.
    */
-  async putConfig(body: unknown): Promise<void> {
+  async putConfig(body: unknown, revision: string): Promise<void> {
+    if (typeof revision !== "string" || revision.trim() === "") {
+      throw new Error("Configuration has no revision token. Reload the page before saving.");
+    }
+    const payload = isRecord(body) ? { ...body, revision } : body;
     const response = await this.send("/admin/config", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        "x-config-revision": revision,
+      },
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       throw await refusalError(response);

@@ -48,6 +48,30 @@ where
     Ok(Secret::new(raw))
 }
 
+/// Deserializes an optional [`Secret`] field, keeping whether it was present.
+pub(super) fn de_opt_secret<'de, D>(deserializer: D) -> Result<Option<Secret>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.map(Secret::new))
+}
+
+/// Serializes a present optional [`Secret`] as `"***"`, as
+/// [`ser_redacted`] does.
+#[expect(
+    clippy::ref_option,
+    reason = "serde's serialize_with passes a reference to the field"
+)]
+pub(super) fn ser_opt_redacted<S>(secret: &Option<Secret>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match secret {
+        Some(_) => serializer.serialize_str("***"),
+        None => serializer.serialize_none(),
+    }
+}
+
 /// Serializes a [`Secret`] field as `"***"`: a serialized configuration never
 /// contains credential material, and a reader treats the marker as "keep the
 /// existing value" on write.

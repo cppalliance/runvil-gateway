@@ -107,3 +107,35 @@ test("a provider without an OpenAI-compatible endpoint cannot merge", () => {
     /OpenAI-compatible/,
   );
 });
+
+test("an existing chatgpt-plan endpoint with the provider id is preserved and skipped in favor of an API-key endpoint", () => {
+  const gpt = sheet.providers.openai.models[0];
+  const config = {
+    endpoint: [
+      {
+        id: "openai",
+        protocol: "openai-responses",
+        auth: "chatgpt-plan",
+      },
+    ],
+  };
+  app.mergeCloudModel(config, "openai", sheet.providers.openai, gpt, { name: "gpt-api-1" });
+  app.mergeCloudModel(config, "openai", sheet.providers.openai, gpt, { name: "gpt-api-2" });
+
+  assert.deepEqual(config.endpoint, [
+    {
+      id: "openai",
+      protocol: "openai-responses",
+      auth: "chatgpt-plan",
+    },
+    {
+      id: "openai-api",
+      protocol: "openai",
+      base_url: "https://api.openai.com/v1",
+      api_key: "${OPENAI_API_KEY}",
+    },
+  ]);
+  assert.deepEqual(config.model[0].endpoints, ["openai-api"]);
+  assert.deepEqual(config.model[1].endpoints, ["openai-api"]);
+});
+

@@ -2,6 +2,7 @@
 //! semantic validation.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -25,12 +26,15 @@ pub use gateway_api_types::{Capabilities, ModelKind, ThinkingMode};
 pub use secret::Secret;
 use secret::de_secret;
 use secret::ser_redacted;
+use secret::{de_opt_secret, ser_opt_redacted};
 use stt::RawSttPipelineConfig;
 pub use stt::{
     RECOMMENDED_STT_MODELS, RecommendedSttModel, SILERO_VAD_MODEL, SpeechArtifactPin,
     SttModelConfig, SttPipelineConfig, SttRole, WhisperBackend,
 };
-pub use vocab::{DominionKind, LlamaBackend, Protocol, QueuePolicy, SearchProvider, ToolDialect};
+pub use vocab::{
+    DominionKind, EndpointAuth, LlamaBackend, Protocol, QueuePolicy, SearchProvider, ToolDialect,
+};
 
 use crate::error::ConfigError;
 
@@ -108,6 +112,9 @@ pub struct Config {
     tools: Option<ToolsConfig>,
     /// Optional canonical speech pipeline tuning.
     stt: Option<SttPipelineConfig>,
+    /// Exact raw UTF-8 bytes from which this configuration was parsed, so
+    /// revision headers/tokens always identify the same snapshot as `to_json`.
+    source_bytes: Option<Arc<[u8]>>,
 }
 
 /// Private DTO for [`Config`]. Holds the raw TOML shape before validation and
@@ -167,6 +174,7 @@ impl TryFrom<RawConfig> for Config {
             stale_state_selection: None,
             tools: raw.tools,
             stt,
+            source_bytes: None,
         })
     }
 }
@@ -337,11 +345,22 @@ pub struct EndpointConfig {
     id: String,
     /// The wire protocol this endpoint speaks.
     protocol: Protocol,
-    /// The backend base URL (a trailing slash is trimmed).
-    base_url: String,
-    /// The credential sent to this backend.
-    #[serde(deserialize_with = "de_secret", serialize_with = "ser_redacted")]
-    api_key: Secret,
+    /// Where the credential comes from. Absent means `api_key` below.
+    #[serde(default, skip_serializing_if = "EndpointAuth::is_api_key")]
+    auth: EndpointAuth,
+    /// The backend base URL (a trailing slash is trimmed). Required unless
+    /// `auth = "chatgpt-plan"`, which refuses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_url: Option<String>,
+    /// The credential sent to this backend. Required unless
+    /// `auth = "chatgpt-plan"`, which refuses it.
+    #[serde(
+        default,
+        deserialize_with = "de_opt_secret",
+        serialize_with = "ser_opt_redacted",
+        skip_serializing_if = "Option::is_none"
+    )]
+    api_key: Option<Secret>,
     /// Optional remote dominion id (`[[dominion]]`) whose shared limit and
     /// queue govern this endpoint. Absent means unlimited pass-through.
     #[serde(default)]

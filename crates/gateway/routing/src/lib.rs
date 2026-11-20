@@ -15,5 +15,5 @@
 mod model;
 pub mod queue;
 
-pub use crate::model::{Endpoint, GEMMA3_TOOL_CODE, Model};
+pub use crate::model::{CredentialSource, Endpoint, GEMMA3_TOOL_CODE, Model};
 pub use crate::queue::dominion_queues;

@@ -17,10 +17,24 @@ use crate::queue::DominionQueue;
 /// dialect emulation matches on it, so both sides name one constant.
 pub const GEMMA3_TOOL_CODE: &str = "gemma3_tool_code";
 
+/// Where an endpoint's credential comes from. A request is authorized by
+/// this, never by a model's or an endpoint's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialSource {
+    /// The endpoint's own configuration, or none for a local model.
+    Configured,
+    /// A user's ChatGPT sign-in, held by the gateway. The catalog entry's
+    /// `upstream` spends nothing; the gateway hands the one that does only
+    /// to a request it has authorized.
+    ChatgptPlan,
+}
+
 /// One backend endpoint plus the upstream that talks to it.
 pub struct Endpoint {
     /// The endpoint's configured id.
     pub id: String,
+    /// Where this endpoint's credential comes from.
+    pub source: CredentialSource,
     /// The upstream implementation forwarding to this backend.
     pub upstream: Arc<dyn Upstream>,
     /// Admission control: concurrency limit plus bounded waiting queue.
@@ -34,6 +48,7 @@ impl fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("id", &self.id)
+            .field("source", &self.source)
             .field("queue", &self.queue)
             .finish_non_exhaustive()
     }
@@ -61,4 +76,28 @@ pub struct Model {
     pub upstream_name: String,
     /// The endpoint serving this model: the first configured one.
     pub endpoint: Arc<Endpoint>,
+}
+
+impl Model {
+    /// This model, sent through `upstream` in place of its endpoint's own.
+    /// Everything else, the endpoint's queue included, is unchanged.
+    #[must_use]
+    pub fn with_upstream(&self, upstream: Arc<dyn Upstream>) -> Model {
+        Model {
+            name: self.name.clone(),
+            kind: self.kind,
+            description: self.description.clone(),
+            context: self.context,
+            thinking: self.thinking,
+            capabilities: self.capabilities.clone(),
+            tool_dialect: self.tool_dialect.clone(),
+            upstream_name: self.upstream_name.clone(),
+            endpoint: Arc::new(Endpoint {
+                id: self.endpoint.id.clone(),
+                source: self.endpoint.source,
+                upstream,
+                queue: self.endpoint.queue.clone(),
+            }),
+        }
+    }
 }

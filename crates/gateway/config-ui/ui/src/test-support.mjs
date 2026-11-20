@@ -4,6 +4,7 @@
 // in a fresh jsdom window and calls the exported `boot` with injected
 // dependencies - a stub fetch standing in for the gateway, jsdom's
 // window for location, sessionStorage, and hashchange.
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -45,11 +46,15 @@ export async function settle(turns = 10) {
 }
 
 /** A JSON response the API wrapper can consume. */
-export function jsonResponse(body, status = 200) {
+export function jsonResponse(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...extraHeaders },
   });
+}
+
+function configRevision(doc) {
+  return createHash("sha256").update(JSON.stringify(doc)).digest("hex");
 }
 
 /** An SSE response with push/end controls for staged event delivery. */
@@ -770,10 +775,14 @@ export function gatewayStub({
       return jsonResponse({ profile: name, restart_required: name !== state.active });
     }
     if (url.endsWith("/admin/config-pending")) {
-      return jsonResponse({
+      const envelope = {
         profile: { ...state.pending, active_profile: state.selected },
         boot: null,
-      });
+      };
+      if (!state.omitPendingRevision) {
+        envelope.revision = configRevision(state.pending);
+      }
+      return jsonResponse(envelope);
     }
     if (url.endsWith("/admin/config-dirty")) {
       return jsonResponse(state.dirty);
@@ -805,7 +814,49 @@ export function gatewayStub({
             return staged;
           }
         }
-        const body = JSON.parse(init.body);
+        const rawBody = JSON.parse(init.body);
+        const { revision, ...body } = rawBody;
+        const headers = new Headers(init.headers);
+        const headerRevision =
+          headers.get("if-match")?.replace(/^"|"$/g, "") ?? headers.get("x-config-revision");
+        const effectiveRevision = revision !== undefined && revision !== null ? revision : headerRevision;
+        if (effectiveRevision === undefined || effectiveRevision === null) {
+          return jsonResponse(
+            {
+              error: {
+                message: "config save requires a revision precondition; reload the page before saving",
+                type: "invalid_request_error",
+                code: "config_revision_required",
+              },
+            },
+            428,
+          );
+        }
+        if (typeof effectiveRevision !== "string" || effectiveRevision === "") {
+          return jsonResponse(
+            {
+              error: {
+                message: "revision must be a non-empty string",
+                type: "invalid_request_error",
+                code: "config_write_rejected",
+              },
+            },
+            422,
+          );
+        }
+        if (effectiveRevision !== configRevision(state.pending)) {
+          return jsonResponse(
+            {
+              error: {
+                message:
+                  "configuration changed on disk since this page loaded; reload the page before saving",
+                type: "invalid_request_error",
+                code: "config_conflict",
+              },
+            },
+            409,
+          );
+        }
         if ("active_profile" in body) {
           return jsonResponse(
             {
@@ -818,6 +869,36 @@ export function gatewayStub({
             },
             422,
           );
+        }
+        for (const entry of Array.isArray(body.endpoint) ? body.endpoint : []) {
+          if (entry && typeof entry === "object" && entry.auth === "chatgpt-plan") {
+            if (entry.protocol !== "openai-responses") {
+              return jsonResponse(
+                {
+                  error: {
+                    message: `endpoint ${entry.id} has auth = "chatgpt-plan", which needs protocol = "openai-responses"`,
+                    type: "invalid_request_error",
+                    code: "config_write_rejected",
+                  },
+                },
+                422,
+              );
+            }
+            for (const forbidden of ["base_url", "api_key"]) {
+              if (forbidden in entry) {
+                return jsonResponse(
+                  {
+                    error: {
+                      message: `endpoint ${entry.id} has auth = "chatgpt-plan" and must not set ${forbidden}`,
+                      type: "invalid_request_error",
+                      code: "config_write_rejected",
+                    },
+                  },
+                  422,
+                );
+              }
+            }
+          }
         }
         // The boot-owned [server] section survives in the pending view when the body omits it.
         if (!("server" in body) && "server" in state.pending) {
@@ -832,7 +913,11 @@ export function gatewayStub({
         };
         return jsonResponse({ shadow: "gateway.toml.next" });
       }
-      return jsonResponse(state.config);
+      const rev = configRevision(state.config);
+      return jsonResponse(state.config, 200, {
+        etag: `"${rev}"`,
+        "x-config-revision": rev,
+      });
     }
     if (url.endsWith("/admin/orphans")) {
       return jsonResponse({ orphans: state.orphans });

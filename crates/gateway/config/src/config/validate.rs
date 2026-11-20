@@ -11,7 +11,10 @@ use std::collections::HashSet;
 
 use url::Url;
 
-use super::{Capabilities, Config, DominionKind, ModelKind, ThinkingMode};
+use super::{
+    Capabilities, Config, DominionKind, EndpointAuth, EndpointConfig, ModelKind, Protocol,
+    ThinkingMode,
+};
 use crate::error::ConfigError;
 
 mod models;
@@ -176,13 +179,7 @@ impl Config {
                     endpoint.id
                 )));
             }
-            // Parse and validate the base URL at load; the upstream adapter then
-            // joins the request path onto a known-good origin instead of
-            // concatenating an arbitrary string (CFG-003, UP-005).
-            validate_http_url(
-                &format!("endpoint {} base_url", endpoint.id),
-                endpoint.base_url.trim(),
-            )?;
+            validate_endpoint_credential(endpoint)?;
             if let Some(dominion_id) = &endpoint.dominion {
                 let dominion = self.dominions.iter().find(|d| d.id == *dominion_id);
                 let Some(dominion) = dominion else {
@@ -370,4 +367,49 @@ fn is_iso_date(value: &str) -> bool {
 /// `moderate`, or `strict`.
 fn is_valid_safesearch(value: &str) -> bool {
     matches!(value, "" | "off" | "moderate" | "strict")
+}
+
+/// Checks an endpoint's destination and credential against its `auth`.
+///
+/// A ChatGPT-plan endpoint sets neither `base_url` nor `api_key`, whatever
+/// their value: the plan's credential goes to OpenAI's API and nowhere a
+/// configuration can name. Every other endpoint sets both.
+fn validate_endpoint_credential(endpoint: &EndpointConfig) -> Result<(), ConfigError> {
+    let id = &endpoint.id;
+    match endpoint.auth {
+        EndpointAuth::ChatgptPlan => {
+            if endpoint.protocol != Protocol::OpenaiResponses {
+                return Err(ConfigError::Validation(format!(
+                    "endpoint {id} has auth = \"chatgpt-plan\", which needs protocol = \"openai-responses\""
+                )));
+            }
+            for (name, present) in [
+                ("base_url", endpoint.base_url.is_some()),
+                ("api_key", endpoint.api_key.is_some()),
+            ] {
+                if present {
+                    return Err(ConfigError::Validation(format!(
+                        "endpoint {id} has auth = \"chatgpt-plan\" and must not set {name}: a ChatGPT plan is sent to OpenAI only, with the signed-in user's credential"
+                    )));
+                }
+            }
+            Ok(())
+        }
+        EndpointAuth::ApiKey => {
+            let Some(base_url) = &endpoint.base_url else {
+                return Err(ConfigError::Validation(format!(
+                    "endpoint {id} needs base_url"
+                )));
+            };
+            if endpoint.api_key.is_none() {
+                return Err(ConfigError::Validation(format!(
+                    "endpoint {id} needs api_key"
+                )));
+            }
+            // Parse and validate the base URL at load; the upstream adapter then
+            // joins the request path onto a known-good origin instead of
+            // concatenating an arbitrary string (CFG-003, UP-005).
+            validate_http_url(&format!("endpoint {id} base_url"), base_url.trim())
+        }
+    }
 }

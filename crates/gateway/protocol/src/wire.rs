@@ -21,6 +21,7 @@ use utoipa::ToSchema;
 mod embedding;
 mod envelope;
 mod rerank;
+mod responses;
 mod speech;
 
 pub use gateway_api_types::ModelInfo;
@@ -28,6 +29,7 @@ pub use gateway_api_types::ModelInfo;
 pub use self::embedding::{EmbeddingInput, EmbeddingRequest, EmbeddingResponse};
 pub use self::envelope::{ErrorDetail, ErrorEnvelope};
 pub use self::rerank::{RerankRequest, RerankResponse};
+pub use self::responses::{RequestPolicy, to_responses_request};
 pub use self::speech::{SpeechRequest, SpeechResponseFormat, SpeechStreamFormat, SpeechVoice};
 
 /// An incoming chat completions request.
