@@ -64,6 +64,28 @@ async fn forwards_method_path_model_and_messages_to_backend() {
     gateway.shutdown().await;
 }
 
+/// A request that does not ask to stream is answered with the backend's
+/// whole reply, in the OpenAI chat-completion shape.
+#[tokio::test]
+async fn a_plain_chat_request_is_answered_with_the_backends_reply() {
+    let gateway = gateway_for(fake_backend().await).await;
+
+    let response = send_within(
+        reqwest::Client::new()
+            .post(format!("http://{}/v1/chat/completions", gateway.addr))
+            .bearer_auth("test-token")
+            .json(&chat_body()),
+    )
+    .await;
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        json_within(response).await,
+        canned_reply("test-model"),
+        "the caller reads the backend's reply, under the public model name it asked for"
+    );
+    gateway.shutdown().await;
+}
+
 /// A 200 upstream response that fails shape validation is a protocol error
 /// (UP-004): the gateway must not fabricate an upstream status that never
 /// happened.
