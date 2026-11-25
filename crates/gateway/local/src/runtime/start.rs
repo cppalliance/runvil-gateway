@@ -247,6 +247,7 @@ pub(super) fn start_impl(
                 upstream_name,
                 endpoint: Arc::new(Endpoint {
                     id: endpoint_id,
+                    source: gateway_routing::CredentialSource::Configured,
                     upstream: Arc::new(upstream.clone()),
                     queue: admission.queue,
                 }),

@@ -1,4 +1,4 @@
-﻿//! Pending-state read routes: `GET /admin/config-pending` and
+//! Pending-state read routes: `GET /admin/config-pending` and
 //! `GET /admin/config-dirty`.
 //!
 //! The write route (`config.rs`) stages the global config as a
@@ -14,17 +14,20 @@
 use std::path::Path;
 
 use axum::extract::State;
-use axum::http::Method;
+use axum::http::{HeaderValue, Method, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use gateway_config::{
-    Config, ProfileSelection, ProfileState, load_pending_config, profile_state_path,
+    Config, ProfileSelection, ProfileState, load_pending_config, parse_pending_config_text,
+    profile_state_path, read_pending_or_real_text,
 };
 use serde::Serialize;
 
+use super::config::REVISION_HEADER;
 use crate::AppState;
 use crate::auth::LoopbackCaller;
-use crate::config_shadow::{PendingEnv, ShadowCensus, config_root, relative_name};
+use crate::config_shadow::{PendingEnv, ShadowCensus, bytes_revision, config_root, relative_name};
 use crate::error::{GatewayError, blocking, pending_read_error};
 use crate::registry::RouteInfo;
 
@@ -36,6 +39,9 @@ struct PendingReply {
     profile: serde_json::Value,
     /// Always `null`: the boot side has no pending view of its own.
     boot: Option<serde_json::Value>,
+    /// Lowercase SHA-256 hex digest of the effective on-disk config bytes
+    /// (`gateway.toml.next` when staged, else `gateway.toml`).
+    revision: String,
 }
 
 /// The `GET /admin/config-dirty` reply.
@@ -79,12 +85,30 @@ pub(super) fn routes() -> Router<AppState> {
 async fn admin_config_pending(
     State(state): State<AppState>,
     _caller: LoopbackCaller,
-) -> Result<Json<PendingReply>, GatewayError> {
+) -> Result<Response, GatewayError> {
     let _publication = state.apply.lock().await;
     let config_path = crate::admin::config_path(&state)?.to_path_buf();
     let running_profile = state.profile_name().await;
+    let path_for_read = config_path.clone();
+    let (source_path, raw) = blocking(move || {
+        read_pending_or_real_text(&path_for_read).map_err(|error| pending_read_error(&error))
+    })
+    .await??;
+    #[cfg(test)]
+    state
+        .park_at(crate::park::Phase::PendingConfigAfterRead)
+        .await;
     let reply = blocking(move || {
-        let config = load_pending_for_running(&config_path, running_profile.as_deref())?;
+        let pending_env = PendingEnv::new(&config_path)?;
+        let config = parse_pending_config_text(
+            &config_path,
+            &source_path,
+            &raw,
+            &ProfileSelection::new(running_profile.as_deref(), None),
+            &|name: &str| pending_env.resolve_var(name),
+        )
+        .map_err(|error| pending_read_error(&error))?;
+        let revision = bytes_revision(raw.as_bytes());
         let mut profile = config.to_json();
         if let Some(table) = profile.as_object_mut() {
             table.insert(
@@ -97,10 +121,19 @@ async fn admin_config_pending(
         Ok::<_, GatewayError>(PendingReply {
             profile,
             boot: None,
+            revision,
         })
     })
     .await??;
-    Ok(Json(reply))
+    let rev = reply.revision.clone();
+    let mut response = Json(reply).into_response();
+    if let Ok(etag) = HeaderValue::from_str(&format!("\"{rev}\"")) {
+        response.headers_mut().insert(header::ETAG, etag);
+    }
+    if let Ok(value) = HeaderValue::from_str(&rev) {
+        response.headers_mut().insert(REVISION_HEADER, value);
+    }
+    Ok(response)
 }
 
 /// Loads the shadow-preferred config under the running selection, which

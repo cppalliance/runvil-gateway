@@ -86,6 +86,29 @@ fn wait_for_new_child(run_dir: &Path, old_pid: u32) -> GatewayDiscoveryFile {
     }
 }
 
+/// Waits for the proofs file that names `child`'s boot. A child writes it
+/// just after its discovery file.
+fn wait_for_proofs_of(
+    run_dir: &Path,
+    child: &GatewayDiscoveryFile,
+) -> gateway_api_discovery::GatewayPrivateFile {
+    let deadline = Instant::now() + BOOT_TIMEOUT;
+
+    loop {
+        if let Ok(Some(proofs)) = gateway_api_discovery::GatewayPrivateFile::read(run_dir)
+            && proofs.names_boot_of(child)
+        {
+            return proofs;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "the child's proofs file should appear within {BOOT_TIMEOUT:?}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
 /// Kills `pid` from outside its supervisor.
 fn kill(pid: u32) {
     let pid = sysinfo::Pid::from_u32(pid);
@@ -221,6 +244,33 @@ fn a_restart_request_relaunches_the_child_on_the_same_port() {
     assert!(
         supervisor.try_wait().is_none(),
         "the supervisor should keep running across a restart"
+    );
+
+    supervisor.stop(EXIT_TIMEOUT);
+}
+
+/// Across a restart the proofs file follows the child: the first child's
+/// proofs are gone, and the file names the new child with proofs of its own.
+#[test]
+fn a_restart_leaves_the_new_childs_proofs_and_not_the_old_ones() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = race_config(&temp);
+    let mut supervisor = GatewayProcess::spawn_headless_launch(&config, temp.path(), &[]);
+
+    let first = wait_for_connection(&run_dir(&temp), BOOT_TIMEOUT);
+    let before = wait_for_proofs_of(&run_dir(&temp), &first);
+
+    request_restart(first.port);
+
+    let second = wait_for_new_child(&run_dir(&temp), first.pid);
+    let after = wait_for_proofs_of(&run_dir(&temp), &second);
+    assert_ne!(
+        after.plan_proof, before.plan_proof,
+        "each boot should mint its own plan proof"
+    );
+    assert_ne!(
+        after.owner_proof, before.owner_proof,
+        "each boot should mint its own owner proof"
     );
 
     supervisor.stop(EXIT_TIMEOUT);

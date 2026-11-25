@@ -274,7 +274,9 @@ fn serve_thread(
     // The gateway discovery file lands before the readiness signal so a spawned
     // gateway is discoverable the moment `spawn` returns; the guard removes
     // it on every exit path below, graceful shutdown included.
-    let gateway_discovery_file = gateway_discovery_file_guard(&config, options, address);
+    open_chatgpt_broker(&gateway.state.chatgpt, options, address);
+    let gateway_discovery_file =
+        gateway_discovery_file_guard(&config, options, address, &gateway.state.chatgpt);
     // Publication counts as a successful gateway start, so from
     // here the rollback config files become stale and should be removed.
     if let Some(config_path) = &rollback_config_path {
@@ -353,9 +355,26 @@ fn cloud_models_cache_path(options: &ServeOptions) -> Option<PathBuf> {
         .map(|state_dir| state_dir.join(crate::boot::CACHE_FILE_NAME))
 }
 
-/// Removes the gateway discovery file on drop when it still belongs to this
-/// process, so a graceful shutdown withdraws the gateway from discovery
-/// while a replacement's file is spared.
+/// Tells the ChatGPT handle the address actually bound and the profile
+/// directory, which is the run directory's parent.
+fn open_chatgpt_broker(
+    chatgpt: &crate::chatgpt::ChatGpt,
+    options: &ServeOptions,
+    address: std::net::SocketAddr,
+) {
+    let profile_dir = options
+        .run_dir
+        .clone()
+        .or_else(gateway_api_discovery::default_run_dir)
+        .and_then(|run_dir| run_dir.parent().map(Path::to_path_buf));
+    chatgpt.start(address, profile_dir.as_deref());
+}
+
+/// Removes the gateway discovery file and the private proofs file on drop
+/// when they still belong to this process, so a graceful shutdown withdraws
+/// the gateway from discovery while a replacement's files are spared.
+/// A gateway that shuts down to restart keeps its discovery file for its
+/// supervisor and still removes its proofs file.
 #[derive(Debug)]
 struct GatewayDiscoveryFileGuard {
     run_dir: PathBuf,
@@ -380,6 +399,11 @@ impl GatewayDiscoveryFileGuard {
 
 impl Drop for GatewayDiscoveryFileGuard {
     fn drop(&mut self) {
+        // The proofs are this boot's alone. They go even when the record
+        // is kept for a supervisor: the next boot mints its own.
+        if let Err(error) = gateway_api_discovery::remove_private_if_mine(&self.run_dir, self.pid) {
+            tracing::warn!("could not remove the gateway private file: {error}");
+        }
         if !self.remove_on_drop {
             return;
         }
@@ -394,10 +418,16 @@ impl Drop for GatewayDiscoveryFileGuard {
 /// and returns the guard that removes it on drop. A failure is logged and
 /// tolerated: the gateway keeps serving, and discovery degrades to a
 /// relaunch instead of an attach.
+///
+/// The private proofs file follows it, carrying the same `pid` and `epoch`
+/// so a reader can pair the two. A failure there is logged and tolerated
+/// too: Runvil's own programs then cannot present a proof, and the routes
+/// that need one refuse.
 fn gateway_discovery_file_guard(
     config: &Config,
     options: &ServeOptions,
     address: std::net::SocketAddr,
+    chatgpt: &crate::chatgpt::ChatGpt,
 ) -> Option<GatewayDiscoveryFileGuard> {
     let Some(run_dir) = options
         .run_dir
@@ -421,6 +451,12 @@ fn gateway_discovery_file_guard(
             .unwrap_or_else(|_| String::from("unknown")),
     };
     let pid = file.pid;
+    let private = gateway_api_discovery::GatewayPrivateFile {
+        pid,
+        epoch: file.epoch,
+        plan_proof: chatgpt.plan_proof().to_owned(),
+        owner_proof: chatgpt.owner_proof().to_owned(),
+    };
     if let Err(error) = file.write_to(&run_dir) {
         tracing::warn!(
             "could not write the gateway discovery file in {}: {error}; attachers will relaunch instead",
@@ -428,5 +464,15 @@ fn gateway_discovery_file_guard(
         );
         return None;
     }
+    if let Err(error) = private.write_to(&run_dir) {
+        tracing::warn!(
+            "could not write the gateway private file in {}: {error}",
+            run_dir.display()
+        );
+    }
     Some(GatewayDiscoveryFileGuard::new(run_dir, pid))
 }
+
+#[cfg(test)]
+#[path = "thread-tests.rs"]
+mod tests;

@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "shadow-plan-tests.rs"]
+mod plan_tests;
+
 const CONFIG: &str = r#"
 config-version = 0
 

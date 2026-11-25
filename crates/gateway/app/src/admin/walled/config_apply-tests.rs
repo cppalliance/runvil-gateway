@@ -13,6 +13,9 @@ mod in_flight;
 #[path = "config_apply-tests-rollback.rs"]
 mod rollback;
 
+#[path = "config_apply-tests-plan.rs"]
+mod plan;
+
 const CONFIG: &str = r#"
 config-version = 0
 
@@ -116,11 +119,17 @@ async fn save_edited(
     addr: SocketAddr,
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> reqwest::Response {
+    let pending = get_json(addr, "admin/config-pending").await;
+    let revision = pending["revision"]
+        .as_str()
+        .expect("pending view exposes revision")
+        .to_owned();
     let mut body = get_json(addr, "admin/config").await;
     body.as_object_mut()
         .expect("the config is an object")
         .remove("active_profile");
     edit(&mut body);
+    body["revision"] = serde_json::Value::String(revision);
     reqwest::Client::new()
         .put(format!("http://{addr}/admin/config"))
         .bearer_auth("test-token")

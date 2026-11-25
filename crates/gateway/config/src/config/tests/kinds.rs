@@ -200,3 +200,52 @@ endpoints = ["e"]
         Err(ConfigError::Validation(_))
     ));
 }
+
+/// A config with one `openai-responses` endpoint and one model on it, with
+/// `model_lines` added to the model.
+fn responses_config(model_lines: &str) -> String {
+    format!(
+        r#"
+config-version = 0
+[server]
+bind = "127.0.0.1:8081"
+api_key = "t"
+
+[[endpoint]]
+id = "r"
+protocol = "openai-responses"
+base_url = "https://api.openai.com/v1"
+api_key = "k"
+
+[[model]]
+name = "m"
+description = "prose"
+context = 8192
+upstream = "u"
+endpoints = ["r"]
+{model_lines}
+"#
+    )
+}
+
+#[test]
+fn a_chat_model_on_a_responses_endpoint_parses() {
+    let config = Config::from_toml_str(&responses_config("")).unwrap();
+    assert_eq!(config.endpoints[0].protocol, Protocol::OpenaiResponses);
+}
+
+#[test]
+fn a_responses_endpoint_refuses_non_chat_kinds_and_emulated_dialects() {
+    for (lines, needle) in [
+        (r#"kind = "embedding""#, "serves chat only"),
+        (
+            r#"tool_dialect = "gemma3_tool_code""#,
+            "tool_dialect openai",
+        ),
+    ] {
+        match Config::parse_toml(&responses_config(lines)) {
+            Err(ConfigError::Validation(message)) => assert!(message.contains(needle), "{message}"),
+            other => panic!("expected a validation error for {lines}, got {other:?}"),
+        }
+    }
+}

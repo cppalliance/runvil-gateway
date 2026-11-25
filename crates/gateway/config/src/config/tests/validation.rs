@@ -160,5 +160,6 @@ mod dominions;
 mod endpoints;
 mod kinds;
 mod local_models;
+mod plan_endpoints;
 mod profiles;
 mod vram;

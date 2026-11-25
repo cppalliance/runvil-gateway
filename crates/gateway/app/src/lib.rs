@@ -89,6 +89,7 @@ mod boot;
 mod boot_load;
 #[cfg(feature = "local")]
 mod cache;
+mod chatgpt;
 mod commands;
 mod config_shadow;
 mod diagnostics;
@@ -282,6 +283,8 @@ struct AppState {
     /// Process-lifetime random salt for the `/auth` handoff's session
     /// proof; a restart or key rotation invalidates every minted cookie.
     handoff_salt: [u8; 32],
+    /// This boot's proofs and the ChatGPT sign-in broker.
+    chatgpt: chatgpt::ChatGpt,
     /// Process-lifetime speech facade shared by routes and the boot load.
     #[cfg(feature = "stt")]
     speech: SpeechService,
@@ -367,6 +370,7 @@ impl AppState {
                 rand::rng().fill(&mut salt);
                 salt
             },
+            chatgpt: chatgpt::ChatGpt::new(),
             #[cfg(feature = "stt")]
             speech,
             #[cfg(test)]

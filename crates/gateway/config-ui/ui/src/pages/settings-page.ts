@@ -1155,6 +1155,7 @@ export function createSettingsPage(deps: SettingsPageDeps): SettingsPage {
   function entryCard(options: {
     card: Card;
     title: string;
+    badge?: string;
     dependents: string[];
     fields: () => HTMLElement[];
     onSave: () => Promise<void>;
@@ -1173,6 +1174,12 @@ export function createSettingsPage(deps: SettingsPageDeps): SettingsPage {
     toggle.setAttribute("aria-expanded", String(expanded.has(card.key)));
     toggle.textContent = options.title;
     heading.append(toggle);
+    if (options.badge) {
+      const badge = document.createElement("span");
+      badge.className = "pill pill-accent entry-badge";
+      badge.textContent = options.badge;
+      heading.append(badge);
+    }
     if (options.dependents.length > 0) {
       const chip = document.createElement("span");
       chip.className = "pill used-by-chip";
@@ -1364,53 +1371,79 @@ export function createSettingsPage(deps: SettingsPageDeps): SettingsPage {
 
   function endpointCard(card: Card, id: string): HTMLElement {
     const dependents = card.draft ? [] : endpointDependents(id);
+    const isPlan = value(card, "auth") === "chatgpt-plan";
+    const dominionOptions = store
+      .dominions()
+      .filter((dominion) => dominion.kind === "remote")
+      .map((dominion) => dominion.id);
     return entryCard({
       card,
       title: id || "(new endpoint)",
+      badge: isPlan ? "ChatGPT plan" : undefined,
       dependents,
-      fields: () => [
-        fieldRow(card, {
+      fields: () => {
+        const idRow = fieldRow(card, {
           path: "id",
           label: "Id",
           help: "The handle [[model]] entries route through.",
           type: "input",
           fallback: "",
-        }),
-        fieldRow(card, {
-          path: "protocol",
-          label: "Protocol",
-          help: "The wire protocol this endpoint speaks.",
-          type: "dropdown",
-          options: ["openai"],
-          fallback: "openai",
-          locked: true,
-        }),
-        fieldRow(card, {
-          path: "base_url",
-          label: "Base URL",
-          help: "The backend's base URL (e.g. https://api.openai.com/v1).",
-          type: "input",
-          fallback: "",
-        }),
-        fieldRow(card, {
-          path: "api_key",
-          label: "API key",
-          help: "The credential sent to this backend.",
-          type: "secret",
-        }),
-        fieldRow(card, {
+        });
+        const dominionRow = fieldRow(card, {
           path: "dominion",
           label: "Dominion",
           help: "Shared concurrency pool governing this endpoint.",
           type: "dropdown",
-          options: store
-            .dominions()
-            .filter((dominion) => dominion.kind === "remote")
-            .map((dominion) => dominion.id),
+          options: dominionOptions,
           allowNone: true,
           fallback: null,
-        }),
-      ],
+        });
+        if (isPlan) {
+          const note = document.createElement("p");
+          note.className = "field-help plan-endpoint-note";
+          note.textContent = "Uses the signed-in ChatGPT plan and is sent to OpenAI only.";
+          return [
+            idRow,
+            fieldRow(card, {
+              path: "protocol",
+              label: "Protocol",
+              help: "Plan endpoints speak the OpenAI Responses API.",
+              type: "dropdown",
+              options: ["openai-responses"],
+              fallback: "openai-responses",
+              locked: true,
+            }),
+            dominionRow,
+            note,
+          ];
+        }
+        return [
+          idRow,
+          fieldRow(card, {
+            path: "protocol",
+            label: "Protocol",
+            help:
+              "The wire protocol the gateway speaks to this endpoint: chat completions (openai), or the Responses API (openai-responses).",
+            type: "dropdown",
+            options: ["openai", "openai-responses"],
+            fallback: "openai",
+          }),
+          fieldRow(card, {
+            path: "base_url",
+            label: "Base URL",
+            help: "The backend's base URL (e.g. https://api.openai.com/v1).",
+            type: "input",
+            fallback: "",
+          }),
+          fieldRow(card, {
+            path: "api_key",
+            label: "API key",
+            help: "The credential sent to this backend.",
+            type: "secret",
+          }),
+          dominionRow,
+        ];
+      },
       onSave: () => saveArrayEntry("endpoint", card, id),
       onDelete: () => void deleteArrayEntry("endpoint", card, id, dependents),
     });
@@ -1443,14 +1476,20 @@ export function createSettingsPage(deps: SettingsPageDeps): SettingsPage {
   ): Promise<void> {
     const payload = store.buildConfigPayload();
     const items = Array.isArray(payload[array]) ? (payload[array] as EntryData[]) : [];
+    const next = effective(card);
+    if (array === "endpoint" && next["auth"] === "chatgpt-plan") {
+      next["protocol"] = "openai-responses";
+      delete next["base_url"];
+      delete next["api_key"];
+    }
     if (card.draft) {
-      items.push(effective(card));
+      items.push(next);
     } else {
       const index = items.findIndex((item) => item["id"] === id);
       if (index >= 0) {
-        items[index] = effective(card);
+        items[index] = next;
       } else {
-        items.push(effective(card));
+        items.push(next);
       }
     }
     payload[array] = items;

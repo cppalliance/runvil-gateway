@@ -40,6 +40,13 @@ async fn send(state: &AppState, method: &Method, path: &str, peer: Option<&str>)
         .method(method.clone())
         .uri(path)
         .header(AUTHORIZATION, "Bearer test-token")
+        // The owner's proof, which the routes that manage a ChatGPT sign-in
+        // need on top of the wall. It opens no other route, and it does not
+        // get a LAN peer past the wall.
+        .header(
+            crate::chatgpt::OWNER_PROOF_HEADER,
+            state.chatgpt.owner_proof(),
+        )
         .body(Body::empty())
         .expect("static request parts are valid");
     if let Some(peer) = peer {

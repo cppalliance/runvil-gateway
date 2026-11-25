@@ -121,3 +121,77 @@ fn post_shutdown_stops_the_gateway_and_removes_the_gateway_discovery_file() {
         "the route-driven shutdown removes the gateway discovery file"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn spawn_writes_the_private_proofs_file_and_its_owner_proof_opens_sign_in() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let config_path = temp.path().join("gateway.toml");
+    std::fs::write(&config_path, CATALOG).unwrap();
+    let run_dir = temp.path().join("run");
+    let options = ServeOptions::new(
+        Some(config_path),
+        ProfileName::parse("alpha").expect("profile name"),
+    )
+    .with_run_dir(run_dir.clone());
+
+    let gateway = spawn(&options).expect("the gateway boots");
+
+    let discovery = gateway_api_discovery::GatewayDiscoveryFile::read(&run_dir)
+        .expect("the gateway discovery file reads")
+        .expect("the gateway discovery file exists");
+    let private = gateway_api_discovery::GatewayPrivateFile::read(&run_dir)
+        .expect("the private file reads")
+        .expect("the private file exists the moment spawn returns");
+    assert!(private.names_boot_of(&discovery));
+    for proof in [&private.plan_proof, &private.owner_proof] {
+        assert_eq!(proof.len(), 64);
+        assert!(proof.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(proof, &discovery.api_key);
+    }
+    assert_ne!(private.plan_proof, private.owner_proof);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |path: std::path::PathBuf| {
+            std::fs::metadata(path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode(run_dir.join("gateway-private.json")), 0o600);
+        // The broker opened its store in the profile directory.
+        assert_eq!(mode(temp.path().join("chatgpt-plan")), 0o700);
+    }
+
+    // The file's owner proof, on top of the key, opens the sign-in routes.
+    let status = |owner_proof: Option<String>| {
+        let mut request = reqwest::Client::new()
+            .get(format!("{}/admin/chatgpt/status", gateway.url()))
+            .bearer_auth(&discovery.api_key);
+        if let Some(owner_proof) = owner_proof {
+            request = request.header("x-runvil-owner-proof", owner_proof);
+        }
+        request.send()
+    };
+    let refused = status(None).await.expect("the gateway answers");
+    assert_eq!(refused.status(), reqwest::StatusCode::FORBIDDEN);
+    let wrong = status(Some(private.plan_proof.clone()))
+        .await
+        .expect("the gateway answers");
+    assert_eq!(wrong.status(), reqwest::StatusCode::FORBIDDEN);
+    let admitted = status(Some(private.owner_proof.clone()))
+        .await
+        .expect("the gateway answers");
+    assert_eq!(admitted.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = admitted.json().await.expect("a status object");
+    assert_eq!(body["available"], true, "{body}");
+    assert_eq!(body["status"], serde_json::Value::Null, "{body}");
+
+    gateway.shutdown().expect("clean shutdown");
+    assert_eq!(
+        gateway_api_discovery::GatewayPrivateFile::read(&run_dir).expect("read after shutdown"),
+        None,
+        "a clean shutdown withdraws the proofs"
+    );
+}

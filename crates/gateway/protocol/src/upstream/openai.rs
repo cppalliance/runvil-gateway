@@ -71,42 +71,7 @@ impl OpenAiUpstream {
             .send()
             .await
             .map_err(ProtocolError::upstream_transport)?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body =
-                crate::http_util::read_body_capped(response, crate::http_util::MAX_ERROR_BODY)
-                    .await;
-            // F5: the raw body may echo prompt content or credentials, so only
-            // its OpenAI error envelope reaches the log, bounded and escaped.
-            let diagnostics = UpstreamErrorDiagnostics::from_body(&body);
-            let code = diagnostics.code.as_str();
-            let kind = diagnostics.kind.as_str();
-            let message = diagnostics.message.as_str();
-            if status.is_server_error() {
-                tracing::warn!(
-                    status = status.as_u16(),
-                    code = %code,
-                    r#type = %kind,
-                    error.message = %message,
-                    "upstream returned a server error"
-                );
-            } else {
-                tracing::info!(
-                    status = status.as_u16(),
-                    code = %code,
-                    r#type = %kind,
-                    error.message = %message,
-                    "upstream returned a client error"
-                );
-            }
-            let body: String = body.chars().take(2000).collect();
-            return Err(ProtocolError::UpstreamStatus {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        Ok(response)
+        check_status(response).await
     }
 
     /// POST `body` to `{base_url}/{path}` and return the success body bytes.
@@ -131,6 +96,51 @@ impl OpenAiUpstream {
             .await
             .map_err(ProtocolError::upstream_transport)
     }
+}
+
+/// Passes a success response through; turns any other status into
+/// [`ProtocolError::UpstreamStatus`], logging only the bounded, escaped
+/// OpenAI error envelope. Shared by every HTTP upstream in this crate.
+///
+/// # Errors
+/// Returns [`ProtocolError::UpstreamStatus`] with a truncated body on a
+/// non-success status.
+pub(super) async fn check_status(
+    response: reqwest::Response,
+) -> Result<reqwest::Response, ProtocolError> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let body = crate::http_util::read_body_capped(response, crate::http_util::MAX_ERROR_BODY).await;
+    // F5: the raw body may echo prompt content or credentials, so only
+    // its OpenAI error envelope reaches the log, bounded and escaped.
+    let diagnostics = UpstreamErrorDiagnostics::from_body(&body);
+    let code = diagnostics.code.as_str();
+    let kind = diagnostics.kind.as_str();
+    let message = diagnostics.message.as_str();
+    if status.is_server_error() {
+        tracing::warn!(
+            status = status.as_u16(),
+            code = %code,
+            r#type = %kind,
+            error.message = %message,
+            "upstream returned a server error"
+        );
+    } else {
+        tracing::info!(
+            status = status.as_u16(),
+            code = %code,
+            r#type = %kind,
+            error.message = %message,
+            "upstream returned a client error"
+        );
+    }
+    let body: String = body.chars().take(2000).collect();
+    Err(ProtocolError::UpstreamStatus {
+        status: status.as_u16(),
+        body,
+    })
 }
 
 /// Maximum characters retained from an upstream error field for diagnostics.
@@ -184,7 +194,7 @@ fn bounded_error_field(value: Option<&serde_json::Value>) -> String {
 /// Escapes every control character so a crafted upstream message cannot forge
 /// log lines or inject terminal control sequences, keeping at most `max_chars`
 /// input characters.
-fn escape_control(text: &str, max_chars: usize) -> String {
+pub(super) fn escape_control(text: &str, max_chars: usize) -> String {
     let mut escaped = String::new();
     for character in text.chars().take(max_chars) {
         match character {

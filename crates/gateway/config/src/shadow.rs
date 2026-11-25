@@ -266,22 +266,55 @@ pub fn load_pending_config(
     inputs: &ProfileSelection,
     lookup: VarLookupFn<'_>,
 ) -> Result<Config, crate::ConfigError> {
-    let (source_path, raw) = read_pending_or_real(config_path)
-        .map_err(crate::ConfigError::from)?
-        .ok_or_else(|| {
-            crate::ConfigError::from(Repr::Read {
-                path: config_path.to_owned(),
-                source: std::io::Error::new(std::io::ErrorKind::NotFound, "config not found"),
-            })
-        })?;
-    let config = Config::parse_toml_with_lookup(
-        &toml::to_string(&raw).map_err(|error| {
-            crate::ConfigError::validation(format!("pending config does not render: {error}"))
-        })?,
-        Some(&source_path),
-        lookup,
-    )
-    .map_err(crate::ConfigError::from)?;
+    let (source_path, raw) = read_pending_or_real_text(config_path)?;
+    parse_pending_config_text(config_path, &source_path, &raw, inputs, lookup)
+}
+
+/// Reads the shadow-preferred config file (`gateway.toml.next` when staged,
+/// otherwise `gateway.toml`) in a single file read, returning the chosen path
+/// and its exact UTF-8 text.
+///
+/// # Errors
+/// Returns [`ConfigError`](crate::ConfigError) when neither file exists or the
+/// chosen file cannot be read as UTF-8.
+pub fn read_pending_or_real_text(
+    config_path: &Path,
+) -> Result<(PathBuf, String), crate::ConfigError> {
+    let shadow = shadow_path(config_path);
+    let chosen = if shadow.is_file() {
+        shadow
+    } else if config_path.is_file() {
+        config_path.to_owned()
+    } else {
+        return Err(crate::ConfigError::from(Repr::Read {
+            path: config_path.to_owned(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "config not found"),
+        }));
+    };
+    let raw = fs::read_to_string(&chosen).map_err(|source| {
+        crate::ConfigError::from(Repr::Read {
+            path: chosen.clone(),
+            source,
+        })
+    })?;
+    Ok((chosen, raw))
+}
+
+/// Parses and selects a pending configuration from already-captured UTF-8 text
+/// so callers can parse and hash the exact same byte snapshot.
+///
+/// # Errors
+/// Returns [`ConfigError`](crate::ConfigError) under the same conditions as
+/// [`load_pending_config`].
+pub fn parse_pending_config_text(
+    config_path: &Path,
+    source_path: &Path,
+    raw: &str,
+    inputs: &ProfileSelection,
+    lookup: VarLookupFn<'_>,
+) -> Result<Config, crate::ConfigError> {
+    let config = Config::parse_toml_with_lookup(raw, Some(source_path), lookup)
+        .map_err(crate::ConfigError::from)?;
     // The state file sits beside the real config, not the shadow.
     config
         .select_at_load(config_path, inputs)
